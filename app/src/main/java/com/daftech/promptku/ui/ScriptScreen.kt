@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -25,14 +26,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.daftech.promptku.data.ScriptSceneItem
+import com.daftech.promptku.engine.CharacterCard
+import com.daftech.promptku.engine.DialogueLang
 import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.ScriptEnding
 import com.daftech.promptku.engine.ScriptTemplates
 import com.daftech.promptku.engine.TargetEngine
 import com.daftech.promptku.engine.VisualStyle
 
-// Mode Naskah v1.2 — wizard 5 langkah: sinopsis -> naskah -> prompt.
+// Mode Naskah v1.3 — wizard 5 langkah: sinopsis -> naskah -> prompt.
 // 8 field inti, 1 wajib (sinopsis). Draft rule-based, bukan tulisan AI.
+// MODEL FLAT: 1 scene = 1 klip 10 detik, daftar Scene 01..N.
+// Approve per scene, dialog ID/EN berdampingan, preview prompt per scene.
 @Composable
 fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
     val input = viewModel.scriptInput
@@ -40,8 +46,7 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
     val draft = viewModel.scriptDraft
     val score = viewModel.scriptScore
     var expandedSceneId by remember { mutableStateOf<Long?>(null) }
-    var sceneEdits by remember { mutableStateOf<Map<Long, Pair<String, String>>>(emptyMap()) }
-    var shotEdits by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    var sceneEdits by remember { mutableStateOf<Map<Long, ScriptSceneItem>>(emptyMap()) }
 
     val stepTitles = listOf(
         "1. Cerita",
@@ -177,11 +182,70 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                     minLines = 2
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Kartu 3 jangkar (dipakai di prompt, bukan DNA panjang)",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = "1 sifat + 1 gestur + 1 benda (+ jangkar wajah). ~12-15 kata — inilah yang mengunci wajah di semua klip.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                val card = input.characterCard ?: CharacterCard()
+                OutlinedTextField(
+                    value = card.trait,
+                    onValueChange = { value ->
+                        viewModel.updateScriptCharacterCard(card.copy(trait = value))
+                    },
+                    label = { Text("Sifat (misal: calm confident look)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = card.gesture,
+                    onValueChange = { value ->
+                        viewModel.updateScriptCharacterCard(card.copy(gesture = value))
+                    },
+                    label = { Text("Gestur (misal: hand to hair)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = card.objectProp,
+                    onValueChange = { value ->
+                        viewModel.updateScriptCharacterCard(card.copy(objectProp = value))
+                    },
+                    label = { Text("Benda (misal: torn denim jacket)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = card.faceAnchor,
+                    onValueChange = { value ->
+                        viewModel.updateScriptCharacterCard(card.copy(faceAnchor = value))
+                    },
+                    label = { Text("Jangkar wajah (misal: grease-smudged face)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                val cardWords = card.toDescription().split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                Text(
+                    text = "Kartu: ${cardWords} kata (target 12-15)" +
+                        if (card.isEmpty()) " — kosong = pakai DNA verbatim (berisiko trim)." else "",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = input.antagonist,
                     onValueChange = { viewModel.updateScriptInput(input.copy(antagonist = it)) },
-                    label = { Text("Antagonis (opsional)") },
+                    label = { Text("Nama antagonis (nama, bukan sifat — opsional)") },
                     modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = input.antagonistDescEn,
+                    onValueChange = { viewModel.updateScriptInput(input.copy(antagonistDescEn = it)) },
+                    label = { Text("Deskripsi antagonis (Inggris, 1 kalimat)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 val worldNames = viewModel.dnaWorlds.map { it.name }
@@ -210,6 +274,19 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                ChipRow(
+                    label = "Bahasa dialog (ID/EN)",
+                    options = DialogueLang.values().map { it.labelId },
+                    selected = input.dialogueLang.labelId,
+                    onSelect = { index ->
+                        viewModel.updateScriptDialogueLang(DialogueLang.values()[index])
+                    }
+                )
+                Text(
+                    text = "Seedance 2.5 satu-satunya engine yang resmi dukung dialog Indonesia. WanGP bisu — dialog masuk Lembar Suara.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             2 -> {
                 ChipRow(
@@ -232,7 +309,7 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                     onSelect = { index -> viewModel.updateScriptInput(input.copy(durationMinutes = durations[index])) }
                 )
                 Text(
-                    text = "5 menit = preset default (pemenang festival AI menang di 5–8 menit). 10 menit = proyek besar: 60 klip.",
+                    text = "1 menit = 6 scene, 3 menit = 18 scene, 5 menit = 30 scene, 10 menit = 60 scene. 1 scene = 1 klip 10 detik.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -306,7 +383,7 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                     Text(
-                        text = "${draft.totalClips} klip • ${draft.estimatedCostId}",
+                        text = "${draft.totalClips} scene • ${draft.estimatedCostId}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
@@ -315,34 +392,85 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Mode Teks: konsistensi wajah mengandalkan teks DNA — drift bisa terjadi setelah 5–6 klip. Re-anchor ke character sheet tiap 4–5 klip (ditandai [RE-ANCHOR]).",
+                        text = "Model flat: 1 scene = 1 klip 10 detik. Konsistensi wajah mengandalkan kartu 3 jangkar — re-anchor ke character sheet tiap 5 klip (ditandai [RE-ANCHOR]).",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(modifier = Modifier.height(12.dp))
+                    val previewScene = viewModel.scriptPreviewScene
+                    val previewPrompt = viewModel.scriptPreviewPrompt
+                    val previewScore = viewModel.scriptPreviewScore
+                    if (previewScene != null && previewPrompt != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Preview Scene ${previewScene.sceneNumber} — ${previewPrompt.engine.labelId} (${previewPrompt.wordCount} kata)",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                if (previewPrompt.meter.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(text = previewPrompt.meter, style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (previewScore != null) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Skor v4: ${previewScore.score}/5" +
+                                            if (previewScore.missing.isNotEmpty()) {
+                                                " — " + previewScore.missing.joinToString("; ") { it.labelId }
+                                            } else {
+                                                ""
+                                            },
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SelectionContainer {
+                                    Text(text = previewPrompt.text, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                if (previewPrompt.warnings.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    previewPrompt.warnings.forEach { warning ->
+                                        Text(text = warning, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                TextButton(onClick = { viewModel.clearScriptPreview() }) {
+                                    Text("Tutup Preview")
+                                }
+                            }
+                        }
+                    }
                     val activeId = viewModel.activeScriptId
                     val scenes = if (activeId != null) {
                         viewModel.scriptScenes[activeId] ?: emptyList()
                     } else {
                         emptyList()
                     }
-                    val shots = if (activeId != null) {
-                        viewModel.scriptShots[activeId] ?: emptyList()
-                    } else {
-                        emptyList()
-                    }
                     scenes.sortedBy { it.orderIndex }.forEach { scene ->
-                        val sceneShots = shots.filter { it.sceneOrder == scene.orderIndex }
+                        val draftScene = draft.scenes.firstOrNull { it.orderIndex == scene.orderIndex }
                         Card(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "Sequence ${scene.orderIndex + 1} — ${scene.beatName}",
+                                    text = "Scene ${scene.sceneNumber} — ${scene.beatName}",
                                     style = MaterialTheme.typography.titleMedium
                                 )
                                 Text(text = scene.slugline, style = MaterialTheme.typography.bodySmall)
                                 Text(
-                                    text = "${sceneShots.size} klip • ${if (scene.approved) "Disetujui" else "Belum disetujui"}",
+                                    text = "${com.daftech.promptku.engine.ScriptEngine.timecodeFor(scene.orderIndex)} • " +
+                                        "${scene.shotSize}, ${if (scene.lensMm > 0) scene.lensMm else 35}mm, ${scene.cameraMove} • " +
+                                        if (scene.approved) "Disetujui" else "Belum disetujui",
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                if (scene.reAnchor) {
+                                    Text(text = "[RE-ANCHOR ke character sheet]", style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (scene.directorNote.isNotBlank()) {
+                                    Text(text = scene.directorNote, style = MaterialTheme.typography.bodySmall)
+                                }
                                 Row {
                                     TextButton(onClick = {
                                         expandedSceneId = if (expandedSceneId == scene.id) null else scene.id
@@ -350,18 +478,23 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                                         Text(if (expandedSceneId == scene.id) "Tutup" else "Lihat / Edit")
                                     }
                                     if (!scene.approved && activeId != null) {
-                                        TextButton(onClick = { viewModel.approveScriptSequence(activeId, scene.orderIndex) }) {
+                                        TextButton(onClick = { viewModel.approveScriptScene(activeId, scene.orderIndex) }) {
                                             Text("Setujui")
                                         }
                                     }
                                     if (activeId != null) {
                                         TextButton(onClick = {
-                                            viewModel.regenerateScriptSequence(
+                                            viewModel.regenerateScriptScene(
                                                 scene.orderIndex,
                                                 (System.currentTimeMillis() % 1000).toInt()
                                             )
                                         }) {
                                             Text("Ulang")
+                                        }
+                                    }
+                                    if (draftScene != null) {
+                                        TextButton(onClick = { viewModel.previewScriptScene(draftScene) }) {
+                                            Text("Preview Prompt")
                                         }
                                     }
                                 }
@@ -370,23 +503,54 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                                     Text(text = "Want: ${scene.want}", style = MaterialTheme.typography.bodySmall)
                                     Text(text = "Obstacle: ${scene.obstacle}", style = MaterialTheme.typography.bodySmall)
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    val edit = sceneEdits[scene.id] ?: (scene.actionEn to scene.dialogueLine)
+                                    val edit = sceneEdits[scene.id] ?: scene
                                     OutlinedTextField(
-                                        value = edit.first,
+                                        value = edit.actionEn,
                                         onValueChange = { value ->
-                                            sceneEdits = sceneEdits + (scene.id to (value to edit.second))
+                                            sceneEdits = sceneEdits + (scene.id to edit.copy(actionEn = value))
                                         },
                                         label = { Text("Aksi scene (Inggris)") },
                                         modifier = Modifier.fillMaxWidth(),
                                         minLines = 2
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Dialog (1 pembicara per scene, maks 12 kata)",
+                                        style = MaterialTheme.typography.titleSmall
+                                    )
                                     OutlinedTextField(
-                                        value = edit.second,
+                                        value = edit.dialogueTextId,
                                         onValueChange = { value ->
-                                            sceneEdits = sceneEdits + (scene.id to (edit.first to value))
+                                            sceneEdits = sceneEdits + (scene.id to edit.copy(dialogueTextId = value))
                                         },
-                                        label = { Text("Dialog (Inggris, opsional)") },
+                                        label = { Text("Dialog Indonesia (opsional)") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = edit.dialogueTextEn,
+                                        onValueChange = { value ->
+                                            sceneEdits = sceneEdits + (scene.id to edit.copy(dialogueTextEn = value))
+                                        },
+                                        label = { Text("Dialog Inggris (opsional)") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = edit.dialogueTone,
+                                        onValueChange = { value ->
+                                            sceneEdits = sceneEdits + (scene.id to edit.copy(dialogueTone = value))
+                                        },
+                                        label = { Text("Nada (misal: a low, steady voice)") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = edit.dialogueTactic,
+                                        onValueChange = { value ->
+                                            sceneEdits = sceneEdits + (scene.id to edit.copy(dialogueTactic = value))
+                                        },
+                                        label = { Text("Taktik (misal: memohon)") },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -400,8 +564,16 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                                     )
                                     Row {
                                         Button(onClick = {
+                                            val activeText = if (edit.dialogueLang == "ID") {
+                                                edit.dialogueTextId.ifBlank { edit.dialogueTextEn }
+                                            } else {
+                                                edit.dialogueTextEn.ifBlank { edit.dialogueTextId }
+                                            }
                                             viewModel.updateScriptScene(
-                                                scene.copy(actionEn = edit.first, dialogueLine = edit.second)
+                                                edit.copy(
+                                                    dialogueName = edit.dialogueName,
+                                                    dialogueLine = activeText
+                                                )
                                             )
                                             sceneEdits = sceneEdits - scene.id
                                         }) {
@@ -409,42 +581,6 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                                         }
                                         TextButton(onClick = { viewModel.deleteScriptScene(scene) }) {
                                             Text("Hapus Scene")
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    sceneShots.sortedBy { it.orderIndex }.forEach { shot ->
-                                        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
-                                                Text(
-                                                    text = "Shot ${shot.orderIndex + 1} [${shot.priority}, ${shot.shotFunction}]" +
-                                                        if (shot.reAnchor) " [RE-ANCHOR]" else "",
-                                                    style = MaterialTheme.typography.titleSmall
-                                                )
-                                                Text(
-                                                    text = "${shot.shotSize}, ${shot.lensMm}mm, ${shot.cameraMove}, ${shot.light}",
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
-                                                val shotAction = shotEdits[shot.id] ?: shot.actionEn
-                                                OutlinedTextField(
-                                                    value = shotAction,
-                                                    onValueChange = { value ->
-                                                        shotEdits = shotEdits + (shot.id to value)
-                                                    },
-                                                    label = { Text("Aksi shot (Inggris)") },
-                                                    modifier = Modifier.fillMaxWidth()
-                                                )
-                                                Row {
-                                                    TextButton(onClick = {
-                                                        viewModel.updateScriptShot(shot.copy(actionEn = shotAction))
-                                                        shotEdits = shotEdits - shot.id
-                                                    }) {
-                                                        Text("Simpan")
-                                                    }
-                                                    TextButton(onClick = { viewModel.deleteScriptShot(shot) }) {
-                                                        Text("Hapus Shot")
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                 }

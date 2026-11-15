@@ -8,16 +8,21 @@ import org.junit.Test
 // (129 kata) tidak boleh lagi mengamputasi dunia/aksi/audio dari prompt Flow.
 class DnaBudgetTest {
 
-    // DNA Riko, 129 kata — persis dari tes film pertama Putra
-    // ("Tukang Tambal Ban itu Ternyata CEO", 15 Nov 2026).
-    private val rikoDna = "His skin is smooth, clear, and fair with a natural, healthy complexion. " +
-        "His eyes are medium-sized, almond-shaped, and dark brown, with a calm, deep, and slightly intense gaze. " +
-        "His eyebrows are naturally thick, dark, straight, and gently defined, giving his face a confident and masculine expression. " +
-        "He has a straight, well-proportioned nose with a refined bridge and a naturally shaped tip. " +
-        "His lips are medium-full, symmetrical, and naturally pink, with a clearly defined upper lip. " +
-        "His cheekbones are subtly sculpted, creating a harmonious facial structure without looking overly sharp. " +
-        "His hair is thick, naturally black, and voluminous, styled in a sophisticated middle-part hairstyle with soft, slightly wavy layers framing his forehead and temples. " +
-        "His overall expression is composed, confident, charismatic, and subtly serious, with an understated sense of elegance."
+    companion object {
+        // DNA Riko, 129 kata — persis dari tes film pertama Putra
+        // ("Tukang Tambal Ban itu Ternyata CEO", 15 Nov 2026).
+        // Dipakai juga DialogueLineTest (scoreV4 trim).
+        const val RIKO_DNA_LONG = "His skin is smooth, clear, and fair with a natural, healthy complexion. " +
+            "His eyes are medium-sized, almond-shaped, and dark brown, with a calm, deep, and slightly intense gaze. " +
+            "His eyebrows are naturally thick, dark, straight, and gently defined, giving his face a confident and masculine expression. " +
+            "He has a straight, well-proportioned nose with a refined bridge and a naturally shaped tip. " +
+            "His lips are medium-full, symmetrical, and naturally pink, with a clearly defined upper lip. " +
+            "His cheekbones are subtly sculpted, creating a harmonious facial structure without looking overly sharp. " +
+            "His hair is thick, naturally black, and voluminous, styled in a sophisticated middle-part hairstyle with soft, slightly wavy layers framing his forehead and temples. " +
+            "His overall expression is composed, confident, charismatic, and subtly serious, with an understated sense of elegance."
+    }
+
+    private val rikoDna = RIKO_DNA_LONG
 
     private fun rikoInput(): ShotInput {
         return ShotInput(

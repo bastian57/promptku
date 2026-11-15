@@ -108,6 +108,63 @@ data class CharacterDna(
     val descriptionEn: String
 )
 
+// Bahasa dialog (v1.3): app menyimpan TEKS ID + EN, tidak menerjemahkan
+// otomatis (rule-based merusak subteks/idiom/ritme). Terjemahan AI = v1.4+ BYOK.
+enum class DialogueLang(val labelId: String) {
+    ID("Indonesia"),
+    EN("Inggris")
+}
+
+// Dialog first-class v1.3 — satu baris yang diucapkan satu tokoh di satu klip.
+// tactic = tujuan taktis baris ini (misal: "memohon", "mengancam");
+// tone = nada sebelum kalimat (misal: "calmly", "firmly");
+// startSec/endSec = timing dalam klip (dialog duduk di paruh kedua, 5-10 dtk).
+data class DialogueLine(
+    val speaker: String = "",
+    val tactic: String = "",
+    val tone: String = "",
+    val textId: String = "",
+    val textEn: String = "",
+    val language: DialogueLang = DialogueLang.EN,
+    val startSec: Float = 5f,
+    val endSec: Float = 10f
+) {
+    // Teks aktif mengikuti bahasa yang dipilih; kalau versi itu kosong,
+    // jatuh ke versi satunya (jangan pernah render string kosong).
+    fun textFor(lang: DialogueLang): String = when (lang) {
+        DialogueLang.ID -> textId.ifBlank { textEn }
+        DialogueLang.EN -> textEn.ifBlank { textId }
+    }
+
+    fun activeText(): String = textFor(language)
+
+    fun wordCount(lang: DialogueLang = language): Int = MythFilter.countWords(textFor(lang))
+
+    fun isEmpty(): Boolean = textId.isBlank() && textEn.isBlank()
+}
+
+// Kartu karakter 3 jangkar v1.3 — SATU sifat + SATU gestur + SATU benda
+// (+ jangkar wajah opsional), ~12-15 kata. Inilah yang ditempel ke prompt,
+// BUKAN deskripsi DNA panjang (DNA panjang tetap hidup di kartu karakter
+// dan TIDAK ditempel — obat struktural bug trim v1.2.0).
+// Contoh Riko: "calm confident look" + "hand to hair" +
+// "torn denim jacket" + "grease-smudged face".
+data class CharacterCard(
+    val trait: String = "",
+    val gesture: String = "",
+    val objectProp: String = "",
+    val faceAnchor: String = ""
+) {
+    fun toDescription(): String = listOf(trait, gesture, objectProp, faceAnchor)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(", ")
+
+    fun wordCount(): Int = MythFilter.countWords(toDescription())
+
+    fun isEmpty(): Boolean = toDescription().isBlank()
+}
+
 // Kunci dunia: deskripsi Inggris verbatim, satu dunia untuk satu film.
 data class WorldLock(
     val name: String,
@@ -117,27 +174,46 @@ data class WorldLock(
 // Global Lock proyek (v1.1): field yang dikunci di tingkat proyek,
 // ditempel verbatim ke SEMUA scene. Field null = tidak dikunci.
 // World + Light + Style (membawa grade warna) + Lens = Global Lock v2.
+// Ambience (v1.3): suara latar yang sama di semua klip ("jangkrik + angin
+// malam") = perekat kontinuitas antar-klip, sejajar Global Lock visual.
 data class GlobalLock(
     val world: WorldLock? = null,
     val light: LightKind? = null,
     val style: VisualStyle? = null,
     val lensMm: Int? = null,
     val character: CharacterDna? = null,
-    val secondCharacter: CharacterDna? = null
+    val secondCharacter: CharacterDna? = null,
+    val ambience: String? = null
 ) {
     fun isEmpty(): Boolean =
         world == null && light == null && style == null && lensMm == null &&
-            character == null && secondCharacter == null
+            character == null && secondCharacter == null && ambience == null
 
     // Lock menang atas input scene; field yang tidak dikunci dibiarkan apa adanya.
+    // Ambience yang dikunci DITARUH DI DEPAN audio scene (lapisan latar),
+    // bukan mengganti SFX scene ("metal tools clinking" tetap ada).
     fun applyTo(input: ShotInput): ShotInput {
+        val audio = if (ambience != null) {
+            val base = input.audioEn.trim()
+            if (base.isBlank()) {
+                ambience
+            } else if (base.startsWith(ambience)) {
+                base
+            } else {
+                "$ambience, $base"
+            }
+        } else {
+            input.audioEn
+        }
         return input.copy(
             world = world ?: input.world,
             light = light ?: input.light,
             style = style ?: input.style,
             lensMm = lensMm ?: input.lensMm,
             character = character ?: input.character,
-            secondCharacter = secondCharacter ?: input.secondCharacter
+            secondCharacter = secondCharacter ?: input.secondCharacter,
+            audioEn = audio,
+            ambienceEn = ambience ?: input.ambienceEn
         )
     }
 
@@ -149,6 +225,7 @@ data class GlobalLock(
         lensMm?.let { parts.add("Lensa: ${it}mm") }
         character?.let { parts.add("Tokoh: ${it.name}") }
         secondCharacter?.let { parts.add("Tokoh 2: ${it.name}") }
+        ambience?.let { parts.add("Ambience: $it") }
         return if (parts.isEmpty()) "Belum dikunci" else parts.joinToString(" | ")
     }
 }
@@ -184,7 +261,16 @@ data class ShotInput(
     // Kosong = tidak disebut di prompt (wizard v1.0/v1.1 tidak berubah).
     val screenDirection: String = "",
     val axisSide: String = "",
-    val transition: String = ""
+    val transition: String = "",
+    // v1.3 — DialogueLine (ID/EN + taktik + nada + timing) menggantikan
+    // pasangan polos dialogueName/dialogueLine; field lama tetap ada
+    // sebagai fallback (template + tes lama + wizard v1).
+    // characterCard menggantikan DNA verbatim di prompt bila terisi.
+    // ambienceEn = suara latar kunci proyek (Ambience Lock), dipisah
+    // dari audioEn (SFX per scene).
+    val dialogue: DialogueLine? = null,
+    val characterCard: CharacterCard? = null,
+    val ambienceEn: String = ""
 )
 
 data class GeneratedPrompt(
@@ -192,7 +278,10 @@ data class GeneratedPrompt(
     val text: String,
     val negativePrompt: String?,
     val wordCount: Int,
-    val warnings: List<String>
+    val warnings: List<String>,
+    // Meter anggaran v1.3 — satu baris ("SHOT 8/15 • SUBJECT 18/25 • ..."),
+    // dihitung PromptCore saat build; kosong bila meter tidak dihitung.
+    val meter: String = ""
 )
 
 data class ScoreItem(

@@ -6,6 +6,9 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+// Tes mesin naskah FLAT v1.3 — 1 scene = 1 klip 10 detik, daftar Scene 01..N.
+// Menggantikan tes coverage v1.2 (model 2 tingkat Sequence -> Shot DITOLAK
+// Putra 19:08 WIB karena "bertele-tele").
 class ScriptEngineTest {
 
     @Test
@@ -28,68 +31,102 @@ class ScriptEngineTest {
     }
 
     @Test
-    fun buildFiveMinuteActionHasEightScenesThirtyShots() {
+    fun buildFiveMinuteActionHasThirtyFlatScenes() {
         val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5))
-        assertEquals(8, draft.scenes.size)
-        assertEquals(30, draft.shots.size)
+        assertEquals(30, draft.scenes.size)
         assertEquals(30, draft.totalClips)
-        assertEquals(90, draft.estimatedGenerations)
-        // Beat checkpoint: sequence 2 = Pemicu, sequence 4 = Fun & Games.
-        assertEquals("Pemicu", draft.scenes[1].beatName)
-        assertEquals("Fun & Games", draft.scenes[3].beatName)
-        assertEquals("Kehancuran", draft.scenes[5].beatName)
+        assertEquals(30, draft.estimatedGenerations)
+        // 8 bab (beat) dalam urutan kanonik.
+        val beats = draft.scenes.map { it.beatName }.distinct()
+        assertEquals(
+            listOf(
+                "Dunia Biasa", "Pemicu", "Rencana & Taruhan", "Fun & Games",
+                "Harga Kemenangan", "Kehancuran", "Kebangkitan", "Dunia Baru"
+            ),
+            beats
+        )
+        // Nomor scene 1..30, timecode naik.
+        assertEquals(1, draft.scenes.first().sceneNumber)
+        assertEquals(30, draft.scenes.last().sceneNumber)
+        assertEquals("00:00-00:10", draft.scenes.first().timecode())
+        assertEquals("04:50-05:00", draft.scenes.last().timecode())
     }
 
     @Test
-    fun buildTenMinuteHasSixtyShotsThreeMinuteHasEighteen() {
+    fun buildTenMinuteHasSixtyScenesThreeMinuteHasEighteen() {
         val ten = ScriptEngine.build(ScriptTemplates.action10Min())
-        assertEquals(60, ten.shots.size)
-        assertEquals(8, ten.scenes.size)
+        assertEquals(60, ten.scenes.size)
+        assertEquals(8, ten.scenes.map { it.sequenceIndex }.distinct().size)
         val three = ScriptEngine.build(ScriptTemplates.drama3Min())
-        assertEquals(18, three.shots.size)
-        assertEquals(5, three.scenes.size)
+        assertEquals(18, three.scenes.size)
+        assertEquals(5, three.scenes.map { it.sequenceIndex }.distinct().size)
         val one = ScriptEngine.build(ScriptTemplates.horror1Min())
-        assertEquals(6, one.shots.size)
-        assertEquals(5, one.scenes.size)
+        assertEquals(6, one.scenes.size)
+        assertEquals(5, one.scenes.map { it.sequenceIndex }.distinct().size)
     }
 
     @Test
-    fun everySceneHasWantObstacleAndEveryShotOneAction() {
+    fun everySceneHasWantObstacleAndOneAction() {
         val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5))
         assertTrue(draft.scenes.all { it.want.isNotBlank() && it.obstacle.isNotBlank() })
-        assertTrue(draft.shots.all { it.actionEn.isNotBlank() })
-        assertTrue(draft.shots.all { it.actionEn.split(Regex("\\s+")).size <= 12 })
-        assertTrue(draft.scenes.all { it.actionEn.split(Regex("\\s+")).size <= 40 })
-        assertTrue(draft.scenes.all { it.dialogueLine.isBlank() || it.dialogueLine.split(Regex("\\s+")).size <= 12 })
+        assertTrue(draft.scenes.all { it.actionEn.isNotBlank() })
+        assertTrue(draft.scenes.all { it.actionEn.split(Regex("\\s+")).size <= 12 })
+        assertTrue(draft.scenes.all { scene ->
+            val line = scene.dialogue ?: return@all true
+            maxOf(
+                line.textEn.split(Regex("\\s+")).filter { it.isNotBlank() }.size,
+                line.textId.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+            ) <= 12
+        })
+    }
+
+    @Test
+    fun noActionRepeatsWithinABeat() {
+        listOf(1, 3, 5, 10).forEach { minutes ->
+            val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = minutes))
+            draft.scenes.groupBy { it.sequenceIndex }.values.forEach { beatScenes ->
+                val actions = beatScenes.map { it.actionEn }
+                assertEquals(actions.size, actions.distinct().size)
+            }
+        }
+        // Genre generik juga (pool generik 8 aksi per beat).
+        val drama = ScriptEngine.build(ScriptTemplates.drama3Min())
+        drama.scenes.groupBy { it.sequenceIndex }.values.forEach { beatScenes ->
+            val actions = beatScenes.map { it.actionEn }
+            assertEquals(actions.size, actions.distinct().size)
+        }
     }
 
     @Test
     fun poseChainAndScreenDirectionConsistent() {
         val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5))
-        val shots = draft.shots
-        for (i in 1 until shots.size) {
-            assertEquals(shots[i - 1].poseEnd, shots[i].poseStart)
+        val scenes = draft.scenes
+        for (i in 1 until scenes.size) {
+            assertEquals(scenes[i - 1].poseEnd, scenes[i].poseStart)
         }
-        // Arah layar + sisi axis konsisten di dalam satu scene.
-        draft.scenes.forEach { scene ->
-            val sceneShots = shots.filter { it.sceneOrder == scene.orderIndex }
-            assertTrue(sceneShots.all { it.screenDirection == scene.screenDirection })
-            assertTrue(sceneShots.all { it.axisSide == scene.axisSide })
+        // Arah layar + sisi axis konsisten di dalam satu beat.
+        scenes.groupBy { it.sequenceIndex }.values.forEach { beatScenes ->
+            assertTrue(beatScenes.all { it.screenDirection == beatScenes.first().screenDirection })
+            assertTrue(beatScenes.all { it.axisSide == beatScenes.first().axisSide })
         }
     }
 
     @Test
-    fun coverageHasPriorityAShotsAndReAnchorMarkers() {
+    fun dialogueAttachedExactlyOncePerBeat() {
         val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5))
-        draft.scenes.forEach { scene ->
-            val sceneShots = draft.shots.filter { it.sceneOrder == scene.orderIndex }
-            assertTrue(sceneShots.any { it.priority == ShotPriority.A })
-            assertEquals(ShotPriority.A, sceneShots.last().priority)
+        draft.scenes.groupBy { it.sequenceIndex }.values.forEach { beatScenes ->
+            assertTrue(beatScenes.count { it.dialogue != null && !it.dialogue.isEmpty() } <= 1)
         }
-        // Re-anchor tiap 5 klip (klip ke-5, 10, 15, ...).
-        val reAnchors = draft.shots.filter { it.reAnchor }
+        // Ada dialog di draft (beat 1-7 punya pool dialog).
+        assertTrue(draft.scenes.any { it.dialogue != null && !it.dialogue.isEmpty() })
+    }
+
+    @Test
+    fun reAnchorEveryFifthClip() {
+        val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5))
+        val reAnchors = draft.scenes.filter { it.reAnchor }
         assertTrue(reAnchors.isNotEmpty())
-        assertEquals(5, draft.shots.indexOf(reAnchors.first()) + 1)
+        assertEquals(listOf(5, 10, 15, 20, 25, 30), reAnchors.map { it.sceneNumber })
     }
 
     @Test
@@ -101,7 +138,7 @@ class ScriptEngineTest {
             style = VisualStyle.ANIME,
             lensMm = 24
         )
-        val shotInput = ScriptEngine.toShotInput(draft, draft.shots.first(), lock)
+        val shotInput = ScriptEngine.toShotInput(draft, draft.scenes.first(), lock)
         assertEquals("Pantai", shotInput.world?.name)
         assertEquals(LightKind.OVERCAST, shotInput.light)
         assertEquals(VisualStyle.ANIME, shotInput.style)
@@ -110,22 +147,25 @@ class ScriptEngineTest {
     }
 
     @Test
-    fun regenerateSequenceChangesOnlyThatSequenceAndKeepsChain() {
+    fun regenerateSceneChangesOnlyThatSceneAndKeepsChain() {
         val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5), seed = 0)
-        val rebuilt = ScriptEngine.regenerateSequence(draft, 2, seed = 1)
-        // Sequence lain tidak berubah.
-        draft.scenes.filter { it.orderIndex != 2 }.forEach { scene ->
+        val rebuilt = ScriptEngine.regenerateScene(draft, 5, seed = 1)
+        // Scene lain tidak berubah.
+        draft.scenes.filter { it.orderIndex != 5 }.forEach { scene ->
             val twin = rebuilt.scenes.first { it.orderIndex == scene.orderIndex }
             assertEquals(scene.actionEn, twin.actionEn)
         }
-        // Sequence yang diulang berubah aksinya.
-        val oldScene = draft.scenes.first { it.orderIndex == 2 }
-        val newScene = rebuilt.scenes.first { it.orderIndex == 2 }
+        // Scene yang diulang berubah aksinya, pose + dialog tetap.
+        val oldScene = draft.scenes.first { it.orderIndex == 5 }
+        val newScene = rebuilt.scenes.first { it.orderIndex == 5 }
         assertNotEquals(oldScene.actionEn, newScene.actionEn)
-        // Rantai pose tetap utuh di semua shot.
-        val shots = rebuilt.shots
-        for (i in 1 until shots.size) {
-            assertEquals(shots[i - 1].poseEnd, shots[i].poseStart)
+        assertEquals(oldScene.poseStart, newScene.poseStart)
+        assertEquals(oldScene.poseEnd, newScene.poseEnd)
+        assertEquals(oldScene.dialogue, newScene.dialogue)
+        // Rantai pose tetap utuh.
+        val scenes = rebuilt.scenes
+        for (i in 1 until scenes.size) {
+            assertEquals(scenes[i - 1].poseEnd, scenes[i].poseStart)
         }
     }
 
@@ -146,17 +186,17 @@ class ScriptEngineTest {
         assertTrue(fountain.contains("FADE OUT."))
         assertTrue(fountain.contains("INT.") || fountain.contains("EXT."))
         // Nama pengucap dialog ditulis caps.
-        val dialogScene = draft.scenes.firstOrNull { it.dialogueLine.isNotBlank() }
+        val dialogScene = draft.scenes.firstOrNull { it.dialogue != null && !it.dialogue.isEmpty() }
         if (dialogScene != null) {
-            assertTrue(fountain.contains(dialogScene.dialogueName.uppercase()))
-            assertTrue(fountain.contains(dialogScene.dialogueLine))
+            assertTrue(fountain.contains(dialogScene.dialogue!!.speaker.uppercase()))
+            assertTrue(fountain.contains(dialogScene.dialogue!!.textEn))
         }
     }
 
     @Test
     fun flowPromptCarriesContinuityPhrase() {
         val draft = ScriptEngine.build(ScriptTemplates.action10Min().copy(durationMinutes = 5))
-        val shotInput = ScriptEngine.toShotInput(draft, draft.shots[1])
+        val shotInput = ScriptEngine.toShotInput(draft, draft.scenes[1])
         val prompt = PromptEngine.build(shotInput.copy(engine = TargetEngine.FLOW))
         assertTrue(prompt.text.contains("Screen direction:"))
         assertTrue(prompt.text.contains("side of the axis"))

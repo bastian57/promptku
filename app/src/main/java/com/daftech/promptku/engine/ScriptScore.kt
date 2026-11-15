@@ -1,10 +1,11 @@
 package com.daftech.promptku.engine
 
-// Naskah Score v1.2 — 10 poin checklist (pola Prompt Score v2).
-// Dihitung dari DRAFT naskah (bukan dari teks hasil), supaya user tahu
+// Naskah Score v1.3 — 10 poin checklist (pola Prompt Score v2).
+// Dihitung dari DRAFT naskah FLAT (bukan dari teks hasil), supaya user tahu
 // bagian mana yang kurang SEBELUM generate prompt massal.
 // Riset 15 Nov 2026: 9 dari 12 kesalahan naskah amatir bisa dicegah
 // mesin rule-based; subtext dan orisinalitas tetap butuh manusia.
+// v1.3: scene = klip (tidak ada lagi shot) — semua aturan dihitung per scene.
 object ScriptScore {
 
     // Kata kerja internal (tidak bisa difilmkan) — dicek di aksi + dialog.
@@ -19,9 +20,13 @@ object ScriptScore {
         "as you remember", "like we discussed"
     )
 
+    private fun dialogueText(scene: DraftScene): String {
+        val line = scene.dialogue ?: return ""
+        return "${line.textEn} ${line.textId}".trim()
+    }
+
     fun score(draft: ScriptDraft): ScoreResult {
         val scenes = draft.scenes
-        val shots = draft.shots
         val items = listOf(
             ScoreItem(
                 id = "want_obstacle",
@@ -33,29 +38,26 @@ object ScriptScore {
             ),
             ScoreItem(
                 id = "one_action",
-                labelId = "1 aksi per shot (<=12 kata)",
-                passed = shots.isNotEmpty() && shots.all {
+                labelId = "1 aksi per scene (<=12 kata)",
+                passed = scenes.isNotEmpty() && scenes.all {
                     it.actionEn.isNotBlank() &&
                         it.actionEn.split(Regex("\\s+")).size <= 12
                 },
-                missingHint = "Satu shot = satu aksi. Pecah aksi ganda jadi dua shot."
+                missingHint = "Satu scene = satu aksi. Pecah aksi ganda jadi dua scene."
             ),
             ScoreItem(
-                id = "scene_action_short",
-                labelId = "Aksi scene <=40 kata",
-                passed = scenes.all {
-                    it.actionEn.split(Regex("\\s+")).size <= 40
+                id = "dialogue_once_per_beat",
+                labelId = "Dialog menempel 1x per beat",
+                passed = scenes.groupBy { it.sequenceIndex }.values.all { beatScenes ->
+                    beatScenes.count { it.dialogue != null && !it.dialogue.isEmpty() } <= 1
                 },
-                missingHint = "Aksi satu scene jangan lebih dari 40 kata — potong jadi shot."
+                missingHint = "Dialog satu beat hanya boleh di 1 scene — dialog yang sama di 2 scene = bertele-tele (bug v1.2)."
             ),
             ScoreItem(
                 id = "no_internal_verbs",
                 labelId = "Tanpa kata kerja internal",
                 passed = scenes.none { scene ->
-                    val text = (scene.actionEn + " " + scene.dialogueLine).lowercase()
-                    INTERNAL_VERBS.any { verb -> text.contains(verb) }
-                } && shots.none { shot ->
-                    val text = shot.actionEn.lowercase()
+                    val text = (scene.actionEn + " " + dialogueText(scene)).lowercase()
                     INTERNAL_VERBS.any { verb -> text.contains(verb) }
                 },
                 missingHint = "Kata kerja internal (thinks, realizes, remembers) tidak bisa difilmkan — ganti dengan aksi terlihat."
@@ -64,7 +66,7 @@ object ScriptScore {
                 id = "no_expository",
                 labelId = "Tanpa dialog ekspositoris",
                 passed = scenes.none { scene ->
-                    val text = scene.dialogueLine.lowercase()
+                    val text = dialogueText(scene).lowercase()
                     EXPOSITORY_PHRASES.any { phrase -> text.contains(phrase) }
                 },
                 missingHint = "Hapus frasa seperti 'as you know' — penonton harus melihat, bukan diceritakan."
@@ -72,9 +74,12 @@ object ScriptScore {
             ScoreItem(
                 id = "dialogue_short",
                 labelId = "Dialog <=12 kata per scene",
-                passed = scenes.all {
-                    it.dialogueLine.isBlank() ||
-                        it.dialogueLine.split(Regex("\\s+")).size <= 12
+                passed = scenes.all { scene ->
+                    val line = scene.dialogue ?: return@all true
+                    maxOf(
+                        line.textEn.split(Regex("\\s+")).filter { it.isNotBlank() }.size,
+                        line.textId.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                    ) <= 12
                 },
                 missingHint = "Dialog satu scene maksimal 12 kata — lip-sync AI lemah untuk dialog panjang."
             ),
@@ -82,7 +87,7 @@ object ScriptScore {
                 id = "few_speakers",
                 labelId = "Tokoh bicara <=3",
                 passed = scenes.mapNotNull {
-                    it.dialogueName.ifBlank { null }
+                    it.dialogue?.speaker?.ifBlank { null }
                 }.distinct().size <= 3,
                 missingHint = "Batasi tokoh yang bicara maksimal 3 — lebih dari itu penonton bingung."
             ),
@@ -99,16 +104,18 @@ object ScriptScore {
             ScoreItem(
                 id = "clip_count_matches",
                 labelId = "Total klip = durasi target",
-                passed = shots.size == ScriptEngine.clipCount(draft.input.durationMinutes),
-                missingHint = "Jumlah klip harus sama dengan durasi ÷ 10 detik."
+                passed = scenes.size == ScriptEngine.clipCount(draft.input.durationMinutes),
+                missingHint = "Jumlah scene harus sama dengan durasi ÷ 10 detik."
             ),
             ScoreItem(
-                id = "entry_exit_state",
-                labelId = "ENTRY/EXIT state semua shot",
-                passed = shots.isNotEmpty() && shots.all {
-                    it.poseStart.isNotBlank() && it.poseEnd.isNotBlank()
-                },
-                missingHint = "Setiap shot butuh pose awal dan pose akhir (rantai kontinuitas)."
+                id = "pose_chain",
+                labelId = "Rantai pose utuh (ENTRY = EXIT sebelumnya)",
+                passed = scenes.isNotEmpty() &&
+                    scenes.all { it.poseStart.isNotBlank() && it.poseEnd.isNotBlank() } &&
+                    (1 until scenes.size).all { i ->
+                        scenes[i].poseStart == scenes[i - 1].poseEnd
+                    },
+                missingHint = "Setiap scene butuh pose awal = pose akhir scene sebelumnya (rantai kontinuitas)."
             )
         )
         return ScoreResult(items, items.count { it.passed })

@@ -180,7 +180,30 @@ object PromptEngine {
         return (mainText + secondText) to warning
     }
 
+    // Subject line v1.3 — kartu 3 jangkar menggantikan DNA verbatim bila
+    // terisi: kartu (~15 kata) tidak pernah kena cap DNA, jadi tidak ada
+    // lagi pemangkasan diam-diam di subject. Karakter kedua tetap memakai
+    // sisa anggaran DNA seperti biasa.
+    private fun subjectLineFor(
+        input: ShotInput,
+        dnaAllowed: Int,
+        maxWords: Int
+    ): Pair<String, String?> {
+        val card = input.characterCard
+        if (card != null && !card.isEmpty() && input.character != null) {
+            val cardInput = input.copy(
+                character = input.character.copy(descriptionEn = card.toDescription())
+            )
+            return budgetedSubjectLine(cardInput, dnaAllowed, maxWords)
+        }
+        return budgetedSubjectLine(input, dnaAllowed, maxWords)
+    }
+
     private fun shortDna(input: ShotInput): String {
+        val card = input.characterCard
+        if (card != null && !card.isEmpty()) {
+            return "${input.character?.name ?: "a person"}, ${card.toDescription()}"
+        }
         val dna = input.character?.descriptionEn ?: ""
         val words = dna.split(Regex("\\s+")).take(12).joinToString(" ")
         return "${input.character?.name ?: "a person"}, $words"
@@ -236,16 +259,67 @@ object PromptEngine {
         return (kept.map { it.text } + tail).joinToString(" ")
     }
 
-    private fun dialogueFlow(input: ShotInput): String {
+    // Render dialog v1.3 — DialogueLine first-class (ID/EN + nada).
+    // Tanpa DialogueLine, jatuh ke field lama dialogueName/dialogueLine
+    // (template + tes lama + wizard v1) dengan perilaku lama yang sama.
+    // Flow: `Nama says, in [tone]: "teks"` (nada dulu, lalu kalimat);
+    // Kling: `Nama (tone): "teks"` (tone default "determined");
+    // Seedance ID: `Language: Indonesian. Nama says, in [tone]: teks`;
+    // WanGP: "" (bisu — dialog ke Lembar Suara, bukan prompt).
+    fun renderDialogue(input: ShotInput, engine: TargetEngine): String {
+        val line = input.dialogue
+        if (line != null && !line.isEmpty()) {
+            val name = line.speaker.ifBlank { input.dialogueName.ifBlank { "The character" } }
+            val text = line.activeText().trim()
+            if (text.isBlank()) return ""
+            val tone = line.tone.trim()
+            return when (engine) {
+                TargetEngine.WAN -> ""
+                TargetEngine.KLING -> {
+                    val toneText = tone.ifBlank { "determined" }
+                    "$name ($toneText): \"$text\""
+                }
+                TargetEngine.SEEDANCE -> {
+                    val toneText = tone.ifBlank { "a calm voice" }
+                    if (line.language == DialogueLang.ID) {
+                        "Language: Indonesian. $name says, in $toneText: $text"
+                    } else {
+                        "$name says, in $toneText: \"$text\""
+                    }
+                }
+                TargetEngine.FLOW -> {
+                    if (tone.isBlank()) {
+                        "$name says, \"$text\""
+                    } else {
+                        "$name says, in $tone: \"$text\""
+                    }
+                }
+            }
+        }
         if (input.dialogueLine.isBlank()) return ""
         val name = input.dialogueName.ifBlank { "The character" }
-        return " $name says, \"${input.dialogueLine.trim()}\""
+        val text = input.dialogueLine.trim()
+        return when (engine) {
+            TargetEngine.WAN -> ""
+            TargetEngine.KLING -> "$name (determined): \"$text\""
+            TargetEngine.SEEDANCE -> "$name says, \"$text\""
+            TargetEngine.FLOW -> "$name says, \"$text\""
+        }
+    }
+
+    private fun dialogueFlow(input: ShotInput): String {
+        val rendered = renderDialogue(input, TargetEngine.FLOW)
+        return if (rendered.isBlank()) "" else " $rendered"
     }
 
     private fun dialogueKling(input: ShotInput): String {
-        if (input.dialogueLine.isBlank()) return ""
-        val name = input.dialogueName.ifBlank { "Character" }
-        return " $name (determined): \"${input.dialogueLine.trim()}\""
+        val rendered = renderDialogue(input, TargetEngine.KLING)
+        return if (rendered.isBlank()) "" else " $rendered"
+    }
+
+    private fun dialogueSeedance(input: ShotInput): String {
+        val rendered = renderDialogue(input, TargetEngine.SEEDANCE)
+        return if (rendered.isBlank()) "" else " $rendered"
     }
 
     // Frasa kontinuitas v1.2 — hanya muncul bila field terisi (Mode Naskah).
@@ -274,7 +348,8 @@ object PromptEngine {
         negative: String?,
         input: ShotInput,
         protectedTail: String? = null,
-        extraWarnings: List<String> = emptyList()
+        extraWarnings: List<String> = emptyList(),
+        meter: String = ""
     ): GeneratedPrompt {
         val filtered = MythFilter.filterMyths(raw)
         val trimmed = if (protectedTail != null && filtered.endsWith(protectedTail)) {
@@ -308,10 +383,13 @@ object PromptEngine {
                 "Tambah detail aksi, dunia, atau cahaya supaya model tidak menebak-nebak."
             )
         }
-        if (engine == TargetEngine.WAN && input.dialogueLine.isNotBlank()) {
+        if (engine == TargetEngine.WAN &&
+            (input.dialogueLine.isNotBlank() ||
+                (input.dialogue != null && !input.dialogue.isEmpty()))
+        ) {
             warnings.add("Wan 2.2 tanpa audio: dialog tidak dimasukkan ke prompt.")
         }
-        return GeneratedPrompt(engine, trimmed, negative, count, warnings)
+        return GeneratedPrompt(engine, trimmed, negative, count, warnings, meter)
     }
 
     // Flow / Veo — kamera ditulis PERTAMA, dua beat timestamp, audio di baris sendiri.
@@ -354,7 +432,7 @@ object PromptEngine {
             ).joinToString(" ")
         )
         val dnaAllowed = (TargetEngine.FLOW.maxWords - otherWords).coerceAtLeast(25)
-        val subject = budgetedSubjectLine(input, dnaAllowed, TargetEngine.FLOW.maxWords)
+        val subject = subjectLineFor(input, dnaAllowed, TargetEngine.FLOW.maxWords)
         val sentences = listOf(
             Sentence(
                 "$shot, $angle, $lens, ${look.first}. ${subject.first} in ${worldText(input)}, $camera, lit with $light.$hide",
@@ -389,7 +467,8 @@ object PromptEngine {
         val raw = assembleOrdered(sentences, FLOW_POSITIVE_LOCK, TargetEngine.FLOW.maxWords)
         return finish(
             TargetEngine.FLOW, raw, null, input, FLOW_POSITIVE_LOCK,
-            extraWarnings = listOfNotNull(subject.second)
+            extraWarnings = listOfNotNull(subject.second),
+            meter = PromptCore.meterLine(input, TargetEngine.FLOW)
         )
     }
 
@@ -418,7 +497,10 @@ object PromptEngine {
                 "The same character design stays consistent in every frame."
             text = MythFilter.filterMyths(text + extra)
         }
-        return finish(TargetEngine.WAN, text, WAN_NEGATIVE_MANDARIN, input)
+        return finish(
+            TargetEngine.WAN, text, WAN_NEGATIVE_MANDARIN, input,
+            meter = PromptCore.meterLine(input, TargetEngine.WAN)
+        )
     }
 
     // Kling — Subject + Action + Setting + Camera + Lighting + Mood.
@@ -467,7 +549,10 @@ object PromptEngine {
             emptyList()
         }
         val raw = assembleOrdered(sentences, POSITIVE_LOCK_SHORT, TargetEngine.KLING.maxWords)
-        return finish(TargetEngine.KLING, raw, null, input, POSITIVE_LOCK_SHORT)
+        return finish(
+            TargetEngine.KLING, raw, null, input, POSITIVE_LOCK_SHORT,
+            meter = PromptCore.meterLine(input, TargetEngine.KLING)
+        )
     }
 
     // Seedance — 8 elemen berurutan + timeline 3 segmen, tanpa negative prompt.
@@ -500,7 +585,7 @@ object PromptEngine {
             ),
             Sentence("[0-2s] $poseStart, $camera.", mandatory = true, dropPriority = 0),
             Sentence(
-                "[2-4s] $action.${dialogueFlow(input)}",
+                "[2-4s] $action.${dialogueSeedance(input)}",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -516,6 +601,9 @@ object PromptEngine {
             emptyList()
         }
         val raw = assembleOrdered(sentences, tail, TargetEngine.SEEDANCE.maxWords)
-        return finish(TargetEngine.SEEDANCE, raw, null, input, tail)
+        return finish(
+            TargetEngine.SEEDANCE, raw, null, input, tail,
+            meter = PromptCore.meterLine(input, TargetEngine.SEEDANCE)
+        )
     }
 }

@@ -225,6 +225,18 @@ fun ProjectScreen(viewModel: PromptKuViewModel, onGoToWizard: () -> Unit) {
                                             }
                                         }
                                     )
+                                    OutlinedTextField(
+                                        value = lockDraft.ambience ?: "",
+                                        onValueChange = { value ->
+                                            lockDraft = lockDraft.copy(ambience = value.ifBlank { null })
+                                        },
+                                        label = { Text("Ambience Lock (misal: jangkrik + angin malam)") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = "Ambience yang sama di semua klip = perekat kontinuitas antar-klip.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
                                     Row {
                                         Button(onClick = {
                                             viewModel.updateProjectLock(project.id, lockDraft)

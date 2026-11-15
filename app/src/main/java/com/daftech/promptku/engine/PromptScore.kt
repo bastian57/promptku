@@ -160,4 +160,85 @@ object PromptScore {
         )
         return ScoreResult(items, items.count { it.passed })
     }
+
+    // Prompt Score v4 (v1.3) — 5 aturan kesehatan PROMPT (bukan input):
+    // dinilai dari input + prompt hasil build (bila sudah ada) + konteks
+    // klip sebelumnya. Aturan 6-8 (show-don't-tell, rantai kontinuitas,
+    // negative per engine) = v1.3.1.
+    // clipSeconds = durasi klip (default 10 dtk, standar Flow).
+    fun scoreV4(
+        input: ShotInput,
+        generated: GeneratedPrompt? = null,
+        prev: ShotInput? = null,
+        clipSeconds: Float = 10f
+    ): ScoreResult {
+        val engine = input.engine ?: TargetEngine.FLOW
+        val meter = PromptCore.meterFor(input, engine, clipSeconds)
+        val estimateTotal = meter.sumOf { it.words }
+        val total = generated?.wordCount ?: estimateTotal
+        val dominant = meter.maxByOrNull { it.words }
+        val dominantShare = if (estimateTotal > 0) {
+            (dominant?.words ?: 0).toDouble() / estimateTotal
+        } else {
+            0.0
+        }
+        val dialogueWords = input.dialogue?.wordCount()
+            ?: MythFilter.countWords(input.dialogueLine)
+        val dialogueLimit = (clipSeconds * 2.5f).toInt().coerceAtLeast(5)
+        // Jumlah pembicara: 1 per DialogueLine; baris lama dihitung dari
+        // kemunculan "says" (adegan 2 pembicara seperti Scene 13 Riko).
+        val renderedDialogue = PromptEngine.renderDialogue(input, engine)
+        val speakers = if (renderedDialogue.isBlank()) {
+            0
+        } else {
+            val saysCount = Regex("(?i)\\bsays\\b").findAll(renderedDialogue).count()
+            val parenCount = Regex("\\([^)]+\\):").findAll(renderedDialogue).count()
+            maxOf(1, saysCount, parenCount)
+        }
+        val lang = input.dialogue?.language ?: DialogueLang.EN
+        val matrix = DialogueMatrix.check(engine, lang)
+        val items = listOf(
+            ScoreItem(
+                id = "slot_budget",
+                labelId = "Anggaran kata per slot",
+                passed = total <= engine.maxWords && dominantShare <= 0.40,
+                missingHint = if (total > engine.maxWords) {
+                    "Prompt $total kata, lewat batas keras ${engine.maxWords} — pendekkan ${dominant?.slot ?: "slot terbesar"}."
+                } else if (dominantShare > 0.40) {
+                    "Slot ${dominant?.slot} makan ${(dominantShare * 100).toInt()}% anggaran — pendekkan atau pakai kartu 3 jangkar (DNA panjang tidak boleh ditempel)."
+                } else {
+                    ""
+                }
+            ),
+            ScoreItem(
+                id = "trim_report",
+                labelId = "Tidak ada trim diam-diam",
+                passed = generated == null ||
+                    generated.warnings.none { it.contains("dipangkas") },
+                missingHint = generated?.warnings
+                    ?.firstOrNull { it.contains("dipangkas") }
+                    ?: "Prompt dipangkas saat build — periksa peringatan trim."
+            ),
+            ScoreItem(
+                id = "dialogue_timing",
+                labelId = "Timing dialog (<=2,5 kata/detik)",
+                passed = dialogueWords <= dialogueLimit,
+                missingHint = "Dialog $dialogueWords kata untuk klip ${clipSeconds.toInt()} dtk (maks $dialogueLimit) — potong atau bagi ke 2 klip."
+            ),
+            ScoreItem(
+                id = "speaker_rule",
+                labelId = "1 pembicara (<=8 dtk) / 2 pembicara (>=10 dtk)",
+                passed = speakers <= 1 || clipSeconds >= 10f,
+                missingHint = "$speakers pembicara dalam klip ${clipSeconds.toInt()} dtk — aturan: 1 pembicara untuk klip <=8 dtk; 2 pembicara butuh >=10 dtk dan keduanya terlihat."
+            ),
+            ScoreItem(
+                id = "dialogue_language",
+                labelId = "Bahasa dialog cocok dengan engine",
+                passed = matrix.check != DialogueCheck.BLOCKED &&
+                    matrix.check != DialogueCheck.SILENT,
+                missingHint = matrix.message
+            )
+        )
+        return ScoreResult(items, items.count { it.passed })
+    }
 }

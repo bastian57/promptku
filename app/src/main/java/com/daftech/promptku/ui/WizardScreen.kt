@@ -43,7 +43,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.daftech.promptku.engine.CameraAngle
 import com.daftech.promptku.engine.CameraMove
+import com.daftech.promptku.engine.CharacterCard
 import com.daftech.promptku.engine.CharacterDna
+import com.daftech.promptku.engine.DialogueCheck
+import com.daftech.promptku.engine.DialogueLang
+import com.daftech.promptku.engine.DialogueLine
+import com.daftech.promptku.engine.DialogueMatrix
 import com.daftech.promptku.engine.FocusMode
 import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.HideTactic
@@ -210,6 +215,58 @@ fun WizardScreen(
                     enabled = activeLock?.character == null
                 )
                 Spacer(modifier = Modifier.height(12.dp))
+                Text(text = "Kartu 3 jangkar (dipakai di prompt)", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "1 sifat + 1 gestur + 1 benda (+ jangkar wajah). ~12-15 kata — ini yang mengunci wajah, bukan DNA panjang.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                val card = input.characterCard ?: CharacterCard()
+                OutlinedTextField(
+                    value = card.trait,
+                    onValueChange = { value ->
+                        viewModel.updateCharacterCard(card.copy(trait = value))
+                    },
+                    label = { Text("Sifat (misal: calm confident look)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = activeLock?.character == null
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = card.gesture,
+                    onValueChange = { value ->
+                        viewModel.updateCharacterCard(card.copy(gesture = value))
+                    },
+                    label = { Text("Gestur (misal: hand to hair)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = activeLock?.character == null
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = card.objectProp,
+                    onValueChange = { value ->
+                        viewModel.updateCharacterCard(card.copy(objectProp = value))
+                    },
+                    label = { Text("Benda (misal: torn denim jacket)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = activeLock?.character == null
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = card.faceAnchor,
+                    onValueChange = { value ->
+                        viewModel.updateCharacterCard(card.copy(faceAnchor = value))
+                    },
+                    label = { Text("Jangkar wajah (misal: grease-smudged face)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = activeLock?.character == null
+                )
+                val cardWords = card.toDescription().split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                Text(
+                    text = "Kartu: $cardWords kata (target 12-15)" +
+                        if (card.isEmpty()) " — kosong = pakai DNA verbatim (berisiko trim)." else "",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(text = "Tokoh kedua (opsional)", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(4.dp))
                 ChipRow(
@@ -345,19 +402,73 @@ fun WizardScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "Dialog (opsional — 1 pembicara per klip)", style = MaterialTheme.typography.titleSmall)
+                val dialogueLine = input.dialogue ?: DialogueLine(
+                    speaker = input.dialogueName,
+                    textEn = input.dialogueLine
+                )
                 OutlinedTextField(
-                    value = input.dialogueName,
-                    onValueChange = { viewModel.updateDialogue(it, input.dialogueLine) },
-                    label = { Text("Nama pengucap dialog (opsional)") },
+                    value = dialogueLine.speaker,
+                    onValueChange = { value ->
+                        viewModel.updateWizardDialogue(dialogueLine.copy(speaker = value))
+                    },
+                    label = { Text("Nama pengucap dialog") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = input.dialogueLine,
-                    onValueChange = { viewModel.updateDialogue(input.dialogueName, it) },
-                    label = { Text("Dialog (opsional, akan diterjemahkan Inggris di prompt)") },
+                    value = dialogueLine.textId,
+                    onValueChange = { value ->
+                        viewModel.updateWizardDialogue(dialogueLine.copy(textId = value))
+                    },
+                    label = { Text("Dialog Indonesia (opsional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dialogueLine.textEn,
+                    onValueChange = { value ->
+                        viewModel.updateWizardDialogue(dialogueLine.copy(textEn = value))
+                    },
+                    label = { Text("Dialog Inggris (opsional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dialogueLine.tone,
+                    onValueChange = { value ->
+                        viewModel.updateWizardDialogue(dialogueLine.copy(tone = value))
+                    },
+                    label = { Text("Nada (misal: a low, steady voice)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dialogueLine.tactic,
+                    onValueChange = { value ->
+                        viewModel.updateWizardDialogue(dialogueLine.copy(tactic = value))
+                    },
+                    label = { Text("Taktik (misal: memohon)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                ChipRow(
+                    label = "Bahasa dialog",
+                    options = DialogueLang.values().map { it.labelId },
+                    selected = dialogueLine.language.labelId,
+                    onSelect = { index ->
+                        viewModel.updateWizardDialogue(
+                            dialogueLine.copy(language = DialogueLang.values()[index])
+                        )
+                    }
+                )
+                val matrixCheck = DialogueMatrix.check(
+                    input.engine ?: TargetEngine.FLOW,
+                    dialogueLine.language
+                )
+                if (matrixCheck.check != DialogueCheck.ALLOWED) {
+                    Text(text = matrixCheck.message, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
 
@@ -440,6 +551,22 @@ fun WizardScreen(
                             )
                         }
                     }
+                    val scoreV4 = viewModel.scoreV4
+                    if (scoreV4 != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Skor Prompt v4: ${scoreV4.score}/5",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        if (scoreV4.missing.isNotEmpty()) {
+                            scoreV4.missing.forEach { item ->
+                                Text(
+                                    text = "- ${item.labelId}: ${item.missingHint}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -459,6 +586,10 @@ fun WizardScreen(
             }
             Spacer(modifier = Modifier.height(8.dp))
             val active = generated[viewModel.resultEngineIndex]
+            if (active.meter.isNotBlank()) {
+                Text(text = active.meter, style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             if (active.warnings.isNotEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),

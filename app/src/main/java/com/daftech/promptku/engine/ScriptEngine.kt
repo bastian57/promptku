@@ -1,12 +1,18 @@
 package com.daftech.promptku.engine
 
-// Mesin naskah PromptKu v1.2 — rule-based offline, tanpa AI.
-// Sinopsis -> naskah terstruktur -> shot list -> prompt multi-scene.
-// Struktur hibrida (riset 15 Nov 2026): 8 Sequence sebagai wadah kerja,
-// Save the Cat 15 beat sebagai checkpoint persentase, 3 babak sebagai header.
-// Durasi <=3 menit: diringkas ke 5 beat film pendek, B Story dihapus.
-// 1 klip = 10 detik (standar Flow). 1 scene dramatis = 1 beat -> 3-7 shot
-// (coverage). 1 shot = 1 ShotInput = 1 prompt.
+// Mesin naskah PromptKu v1.3 — rule-based offline, tanpa AI.
+// Sinopsis -> naskah FLAT -> prompt multi-scene.
+// MODEL FLAT (keputusan Putra 19:08 WIB, mengikat — ganti model 2 tingkat
+// v1.2.0 yang ditolak karena "bertele-tele"):
+// 1 scene = 1 klip 10 detik. Jumlah scene = durasi / 10 detik.
+// 5 menit = 30 scene; 10 menit = 60 scene. Tidak ada Sequence/Shot
+// bersarang, tidak ada coverage A/B/C — tiap scene maju 1 beat cerita.
+// Struktur 8 Sequence TETAP dipakai sebagai KERANGKA CERITA (busur
+// naik-turun: dunia biasa -> pemicu -> rencana -> tawa -> harga -> hancur
+// -> bangkit -> akhir) tapi HANYA sebagai label bab di daftar flat,
+// BUKAN wadah/tingkat UI. Approve per scene, bukan per sequence.
+// 1 klip = 10 detik (standar Flow). Dialog menempel di TEPAT SATU scene
+// (bug v1.2: dialog menempel 2x di shot OVER_SHOULDER + CLOSEUP).
 
 enum class ScriptEnding(val labelId: String) {
     HAPPY("Bahagia"),
@@ -14,21 +20,7 @@ enum class ScriptEnding(val labelId: String) {
     OPEN("Terbuka")
 }
 
-enum class ShotPriority(val labelId: String) {
-    A("A - Wajib"),
-    B("B - Pendukung"),
-    C("C - Nice-to-have")
-}
-
-enum class ShotFunction(val labelId: String) {
-    ESTABLISHING("Establishing"),
-    DETAIL("Detail"),
-    RELATION("Relasi"),
-    ACTION("Aksi"),
-    SCALE("Skala")
-}
-
-// Satu beat/sequence: wadah kerja naskah. tension 1-8 menggerakkan
+// Satu beat/sequence: label bab di daftar flat. tension 1-8 menggerakkan
 // pilihan sutradara (shot makin ketat + lensa makin panjang saat tegang).
 data class BeatDef(
     val index: Int,
@@ -94,6 +86,18 @@ object ScriptBeats {
             else -> if (shotIndex % 2 == 0) CameraMove.DOLLY_IN else CameraMove.HANDHELD
         }
     }
+
+    // Nada dialog default mengikuti ketegangan beat (dipakai bila user
+    // belum menulis nada sendiri). Frasa lengkap, bukan 1 kata — prompt
+    // merender "says, in a low, steady voice: ...".
+    fun toneForTension(tension: Int): String {
+        return when {
+            tension <= 2 -> "a calm voice"
+            tension <= 4 -> "a low, steady voice"
+            tension <= 6 -> "a firm voice"
+            else -> "an urgent voice"
+        }
+    }
 }
 
 // Input form naskah — 8 field inti, 1 wajib (sinopsis).
@@ -106,64 +110,63 @@ data class ScriptInput(
     val protagonistName: String = "",
     val protagonistDescEn: String = "",
     val antagonist: String = "",
+    val antagonistDescEn: String = "",
     val worldName: String = "",
     val worldDescEn: String = "",
     val conflict: String = "",
     val ending: ScriptEnding = ScriptEnding.HAPPY,
     val style: VisualStyle = VisualStyle.REALISTIC,
-    val engine: TargetEngine = TargetEngine.FLOW
+    val engine: TargetEngine = TargetEngine.FLOW,
+    // v1.3 — bahasa dialog default naskah (ID/EN) + kartu 3 jangkar tokoh.
+    val dialogueLang: DialogueLang = DialogueLang.EN,
+    val characterCard: CharacterCard? = null
 ) {
     fun isReady(): Boolean = synopsis.trim().split(Regex("\\s+")).size >= 10
 }
 
-// Satu scene dramatis: 1 slugline, 1 want, 1 obstacle, 0-1 dialog.
+// Satu scene FLAT = 1 klip 10 detik = 1 ShotInput = 1 prompt.
+// sceneNumber 1-based (Scene 01..N), orderIndex 0-based.
+// sequenceIndex + beatName = label bab (kerangka 8 Sequence), BUKAN wadah.
+// dialogue menempel di TEPAT SATU scene per beat (null di scene lain).
+// directorNote = "Kenapa shot ini" (tension/genre/durasi, 1 kalimat).
+// reAnchor = klip ke-5, 10, 15, ... — tandai re-anchor ke character sheet.
 data class DraftScene(
-    val sequenceIndex: Int,
+    val sceneNumber: Int,
     val orderIndex: Int,
+    val sequenceIndex: Int,
     val beatName: String,
     val slugline: String,
     val want: String,
     val obstacle: String,
     val actionEn: String,
-    val dialogueName: String,
-    val dialogueLine: String,
-    val poseStart: String,
-    val poseEnd: String,
-    val screenDirection: String,
-    val axisSide: String
-)
-
-// Satu shot = 1 klip 10 detik = 1 ShotInput = 1 prompt.
-data class DraftShot(
-    val sceneOrder: Int,
-    val orderIndex: Int,
+    val dialogue: DialogueLine?,
     val shotSize: ShotSize,
     val angle: CameraAngle,
     val lensMm: Int,
     val cameraMove: CameraMove,
     val light: LightKind,
-    val actionEn: String,
     val poseStart: String,
     val poseEnd: String,
     val screenDirection: String,
     val axisSide: String,
-    val priority: ShotPriority,
-    val shotFunction: ShotFunction,
     val transition: String,
+    val directorNote: String,
     val reAnchor: Boolean
-)
+) {
+    fun timecode(): String = ScriptEngine.timecodeFor(orderIndex)
+}
 
 data class ScriptDraft(
     val input: ScriptInput,
     val scenes: List<DraftScene>,
-    val shots: List<DraftShot>,
     val totalClips: Int,
     val estimatedGenerations: Int,
     val estimatedCostId: String,
     val estimatedHoursId: String
 )
 
-// Pool aksi per beat — Action paling lengkap; genre lain memakai pool generik.
+// Pool aksi per beat — 8 aksi per beat (maks 8 klip per beat di film
+// 10 menit), supaya TIDAK ADA aksi yang berulang dalam satu beat.
 // Semua aksi: present tense, 1 aksi, <=12 kata. {P} = tokoh, {A} = antagonis.
 object ScriptPools {
     fun actionsFor(genre: Genre, beatIndex: Int): List<String> {
@@ -172,83 +175,163 @@ object ScriptPools {
                 "walks through the morning market carrying a delivery bag",
                 "weaves his motorcycle through slow traffic",
                 "delivers a parcel and waves goodbye",
-                "checks his phone while waiting at a red light"
+                "checks his phone while waiting at a red light",
+                "parks his motorcycle and stretches his shoulders",
+                "buys a coffee and sips it slowly",
+                "greets a shopkeeper and laughs warmly",
+                "rides past the old harbor as gulls circle"
             ),
             listOf(
                 "opens the package and finds a glowing chip inside",
                 "stares at the chip as it pulses with light",
                 "hides the chip in his jacket pocket",
-                "looks over his shoulder as footsteps approach"
+                "looks over his shoulder as footsteps approach",
+                "closes the package and tucks it under his arm",
+                "reads the delivery note twice, hands shaking",
+                "locks the door and pulls the curtain shut",
+                "whispers a warning to himself and nods"
             ),
             listOf(
                 "studies a city map and marks three escape routes",
                 "meets a stranger who warns him to run",
                 "packs a small bag and locks the door",
-                "calls an old friend and asks for help"
+                "calls an old friend and asks for help",
+                "counts his money and hides it in his boot",
+                "memorizes the address and burns the paper",
+                "checks the chip once more before dawn",
+                "draws a route on the fogged window"
             ),
             listOf(
                 "sprints across rooftops as drones scan below",
                 "slides under a closing shutter and rolls to his feet",
                 "leaps between balconies above the crowded street",
-                "dodges through the night market as stalls crash behind him"
+                "dodges through the night market as stalls crash behind him",
+                "swings across a gap on a loose cable",
+                "slides down a drainpipe and lands in an alley",
+                "hides behind a food cart as a drone passes",
+                "runs along the train tracks as headlights approach"
             ),
             listOf(
                 "discovers his friend betrayed him for money",
                 "watches the chip's light fade as the signal dies",
                 "runs through the rain as sirens close in",
-                "hides in a stairwell, breathing hard"
+                "hides in a stairwell, breathing hard",
+                "finds his phone smashed on the wet pavement",
+                "watches his motorcycle burn across the street",
+                "clutches the chip as the rain soaks him",
+                "reads a threatening message and deletes it"
             ),
             listOf(
                 "is cornered in a dead-end alley by armed men",
                 "drops to his knees as the chip is torn away",
                 "lies on the wet asphalt as boots surround him",
-                "reaches for the chip but a boot pins his hand"
+                "reaches for the chip but a boot pins his hand",
+                "crawls toward the gutter as the men laugh",
+                "presses his forehead to the cold ground",
+                "watches the chip disappear into a black van",
+                "lies still as the footsteps fade away"
             ),
             listOf(
                 "rises slowly, fists clenched, eyes burning",
                 "charges forward and throws a punch",
                 "snatches the chip back and sprints for the exit",
-                "stands tall in the smoke as the men hesitate"
+                "stands tall in the smoke as the men hesitate",
+                "wrenches a metal pipe free and swings it",
+                "shoves the leader aside and breaks through the door",
+                "grabs the chip from the table and runs",
+                "faces the men alone, breathing steadily"
             ),
             listOf(
                 "walks into the sunrise, chip secured in his pocket",
                 "hands the chip to the woman who waited for him",
                 "looks back once at the ruined city, then walks on",
-                "rides away as the city wakes behind him"
+                "rides away as the city wakes behind him",
+                "watches the sun rise over the harbor",
+                "smiles quietly and pockets the chip for good",
+                "waves goodbye to the city that chased him",
+                "walks home as the morning light returns"
             )
         )
         val generic = listOf(
             listOf(
                 "walks slowly through the quiet street",
-                "looks around the empty room"
+                "looks around the empty room",
+                "opens the window and breathes in the morning air",
+                "waters the plants on the windowsill",
+                "sits on the porch and watches the street wake",
+                "folds a letter and slips it into a drawer",
+                "stirs a cup of tea and stares out the window",
+                "ties his shoes and steps outside"
             ),
             listOf(
                 "finds something unexpected and stops",
-                "reads the letter twice, hands shaking"
+                "reads the letter twice, hands shaking",
+                "picks up the phone and listens in silence",
+                "opens the old box and lifts the lid slowly",
+                "hears a knock and turns toward the door",
+                "finds a photograph face-down on the floor",
+                "reads a name he has not seen in years",
+                "closes the letter and holds it to his chest"
             ),
             listOf(
                 "makes a plan and gathers what he needs",
-                "asks for help from a stranger"
+                "asks for help from a stranger",
+                "writes a list and crosses out the first line",
+                "packs a small bag by the door",
+                "studies an old map under the lamp light",
+                "calls a number he memorized long ago",
+                "hides a key beneath the loose floorboard",
+                "practices the words he will say tomorrow"
             ),
             listOf(
                 "tries the plan and it almost works",
-                "laughs for the first time in days"
+                "laughs for the first time in days",
+                "runs through the market as stalls blur past",
+                "dances alone in the empty kitchen",
+                "climbs the hill and sees the whole town",
+                "sings quietly while washing the dishes",
+                "chases a dog down the narrow lane",
+                "jumps the fence and lands laughing"
             ),
             listOf(
                 "learns the price of the plan",
-                "loses something he cannot replace"
+                "loses something he cannot replace",
+                "watches the rain wash the chalk away",
+                "finds the door locked from the inside",
+                "counts the coins and shakes his head",
+                "reads the bad news twice in silence",
+                "watches a friend walk away without looking back",
+                "holds a broken cup and sighs"
             ),
             listOf(
                 "faces the worst moment alone",
-                "falls silent as everything breaks"
+                "falls silent as everything breaks",
+                "sits on the floor as the light fades",
+                "stares at the wall as the clock ticks",
+                "drops the letter and covers his face",
+                "kneels in the rain and closes his eyes",
+                "watches the last bus leave without him",
+                "lies awake as the house creaks around him"
             ),
             listOf(
                 "finds the strength to stand again",
-                "chooses to fight instead of running"
+                "chooses to fight instead of running",
+                "wipes his eyes and ties his shoes",
+                "picks up the phone and dials the number",
+                "opens the door and steps into the light",
+                "lifts the fallen chair and sets it straight",
+                "takes a deep breath and knocks twice",
+                "runs toward the sound instead of away"
             ),
             listOf(
                 "walks toward a new morning",
-                "smiles quietly as the light returns"
+                "smiles quietly as the light returns",
+                "plants a seed in the old garden",
+                "writes a new letter and seals it",
+                "opens the shutters to the sunrise",
+                "hangs the photograph back on the wall",
+                "waves at the neighbor and walks on",
+                "sits on the porch as the evening settles"
             )
         )
         val idx = beatIndex % 8
@@ -307,7 +390,24 @@ object ScriptPools {
         )[beatIndex % 8]
     }
 
-    // Pose akhir per aksi — dipakai sebagai ENTRY STATE shot berikut.
+    // Siklus pose akhir per klip — urutan TETAP supaya rantai pose masuk
+    // akal (berdiri -> jalan -> berdiri tegak -> berlutut -> bangkit ->
+    // berdiri -> jongkok -> berdiri tegak). Pelajaran audit v1.2: pose
+    // acak ("berdiri -> berlutut -> telentang -> jongkok") kelihatan aneh.
+    // Pose awal klip = pose akhir klip sebelumnya (rantai utuh).
+    val POSE_CYCLE: List<String> = listOf(
+        "standing still",
+        "walking forward",
+        "standing tall",
+        "kneeling on the ground",
+        "rising slowly",
+        "standing still",
+        "crouching low",
+        "standing tall"
+    )
+
+    // Fragmen pose lama (v1.2) — dipertahankan untuk kompatibilitas,
+    // build() v1.3 memakai POSE_CYCLE.
     val POSE_FRAGMENTS: List<String> = listOf(
         "standing still",
         "walking forward",
@@ -328,6 +428,18 @@ object ScriptEngine {
 
     // 1 klip = 10 detik -> 6 klip per menit.
     fun clipCount(durationMinutes: Int): Int = durationMinutes * 6
+
+    // Timecode klip ke-n (0-based): "00:00-00:10", "00:10-00:20", ...
+    fun timecodeFor(orderIndex: Int): String {
+        val start = orderIndex * 10
+        val end = start + 10
+        fun fmt(seconds: Int): String {
+            val minutes = seconds / 60
+            val secs = seconds % 60
+            return "%02d:%02d".format(minutes, secs)
+        }
+        return "${fmt(start)}-${fmt(end)}"
+    }
 
     // Alokasi klip per beat dari persentase durasi (murni aritmetika).
     // 8 sequence: jatah sama 12,5%, sisa ke sequence paling tegang dulu.
@@ -354,6 +466,31 @@ object ScriptEngine {
         return result
     }
 
+    // Pola ukuran shot per klip dalam satu beat — bervariasi supaya tidak
+    // ada dua klip berurutan yang ukurannya sama (aturan 30 derajat).
+    private val SHOT_PATTERN: List<ShotSize> = listOf(
+        ShotSize.WIDE,
+        ShotSize.MEDIUM,
+        ShotSize.CLOSEUP,
+        ShotSize.MEDIUM_CLOSEUP,
+        ShotSize.TWO_SHOT,
+        ShotSize.EXTREME_CLOSEUP,
+        ShotSize.WIDE,
+        ShotSize.MEDIUM
+    )
+
+    // "Kenapa shot ini" — 1 kalimat penjelasan dari tension/genre/durasi.
+    fun directorNoteFor(beat: BeatDef, shotSize: ShotSize, lensMm: Int, move: CameraMove): String {
+        val reason = when {
+            beat.tension <= 2 -> "dunia biasa butuh ketenangan — kamera diam, shot lebar."
+            beat.tension <= 4 -> "ketegangan naik — kamera mulai bergerak, shot menengah."
+            beat.tension <= 6 -> "ketegangan tinggi — shot makin ketat, lensa makin panjang."
+            else -> "titik terendah/klimaks — shot paling ketat, kamera paling dekat."
+        }
+        return "Beat ${beat.nameId} — ketegangan ${beat.tension}/8. " +
+            "${shotSize.labelId}, ${lensMm}mm, ${move.labelId}: $reason"
+    }
+
     fun build(input: ScriptInput, seed: Int = 0): ScriptDraft {
         val beats = ScriptBeats.forDuration(input.durationMinutes)
         val allocation = allocateClips(input.durationMinutes)
@@ -363,217 +500,154 @@ object ScriptEngine {
             .split(Regex("\\s+")).take(3).joinToString(" ").uppercase()
 
         val scenes = mutableListOf<DraftScene>()
-        val shots = mutableListOf<DraftShot>()
-        var globalShotIndex = 0
+        var globalClipIndex = 0
         var lastPoseEnd = "standing still"
 
         beats.forEachIndexed { beatIdx, beat ->
-            val shotCount = allocation.getOrElse(beatIdx) { 0 }
-            if (shotCount <= 0) return@forEachIndexed
+            val clipCount = allocation.getOrElse(beatIdx) { 0 }
+            if (clipCount <= 0) return@forEachIndexed
             val actions = ScriptPools.actionsFor(input.genre, beat.index)
-            val action = actions[(seed + beatIdx) % actions.size]
             val dialogues = ScriptPools.dialoguesFor(input.genre, beat.index)
-            val dialogueLine = if (dialogues.isNotEmpty()) {
+            val dialogueText = if (dialogues.isNotEmpty()) {
                 dialogues[(seed + beatIdx) % dialogues.size]
             } else {
                 ""
             }
-            val isDialogScene = dialogueLine.isNotBlank()
-            val slugline = if (isDialogScene) {
-                "INT. $worldShort - ${beat.timeOfDay}"
-            } else {
-                "EXT. $worldShort - ${beat.timeOfDay}"
-            }
+            // Dialog menempel di TEPAT SATU klip per beat: klip ke-2 bila
+            // beat punya >=2 klip, kalau tidak klip pertama. Tidak pernah 2x.
+            val dialogueClipIdx = if (clipCount >= 2) 1 else 0
             val want = ScriptPools.wantsFor(beat.index)
                 .replace("{P}", protagonist).replace("{A}", antagonist)
             val obstacle = ScriptPools.obstaclesFor(beat.index)
                 .replace("{P}", protagonist).replace("{A}", antagonist)
             val screenDirection = if (beatIdx % 2 == 0) "left to right" else "right to left"
             val axisSide = if (beatIdx % 2 == 0) "left" else "right"
-            val poseStartScene = lastPoseEnd
-            val poseEndScene = ScriptPools.POSE_FRAGMENTS[(seed + beatIdx * 3) % ScriptPools.POSE_FRAGMENTS.size]
-
-            val scene = DraftScene(
-                sequenceIndex = beat.index,
-                orderIndex = beatIdx,
-                beatName = beat.nameId,
-                slugline = slugline,
-                want = want,
-                obstacle = obstacle,
-                actionEn = action,
-                dialogueName = if (isDialogScene) protagonist else "",
-                dialogueLine = dialogueLine,
-                poseStart = poseStartScene,
-                poseEnd = poseEndScene,
-                screenDirection = screenDirection,
-                axisSide = axisSide
-            )
-            scenes.add(scene)
-
-            // Pecah scene -> shot dengan pola coverage.
-            val pattern = coveragePattern(isDialogScene)
-            val functions = coverageFunctions(isDialogScene)
             val light = ScriptBeats.lightForTime(beat.timeOfDay)
             val lens = ScriptBeats.lensForTension(beat.tension)
-            var shotPoseStart = poseStartScene
-            for (shotIdx in 0 until shotCount) {
-                val patternIdx = shotIdx % pattern.size
-                val shotSize = pattern[patternIdx]
+
+            for (clipIdx in 0 until clipCount) {
+                // Aksi BERBEDA tiap klip dalam satu beat (pool 8 aksi,
+                // maks 8 klip per beat) — tidak ada aksi yang mengulang.
+                val action = actions[(seed + clipIdx) % actions.size]
+                // Ukuran shot: klip dialog dengan antagonis = TWO_SHOT
+                // (kecuali pola sudah TWO_SHOT — pakai CLOSEUP supaya
+                // tidak ada dua klip berurutan berukuran sama);
+                // tanpa antagonis, TWO_SHOT di pola diganti MEDIUM.
+                val rawSize = SHOT_PATTERN[(clipIdx + beatIdx) % SHOT_PATTERN.size]
+                val shotSize = when {
+                    clipIdx == dialogueClipIdx && dialogueText.isNotBlank() &&
+                        input.antagonist.isNotBlank() -> {
+                        if (rawSize == ShotSize.TWO_SHOT) ShotSize.CLOSEUP else ShotSize.TWO_SHOT
+                    }
+                    rawSize == ShotSize.TWO_SHOT && input.antagonist.isBlank() -> ShotSize.MEDIUM
+                    else -> rawSize
+                }
                 val angle = if (shotSize == ShotSize.WIDE || shotSize == ShotSize.EXTREME_WIDE) {
-                    if (shotIdx % 2 == 0) CameraAngle.BIRD else CameraAngle.EYE
+                    if (clipIdx % 2 == 0) CameraAngle.BIRD else CameraAngle.EYE
                 } else {
                     CameraAngle.EYE
                 }
-                val move = if (shotIdx == 0) {
+                val move = if (clipIdx == 0) {
                     CameraMove.STATIC
                 } else {
-                    ScriptBeats.moveForTension(beat.tension, shotIdx)
+                    ScriptBeats.moveForTension(beat.tension, clipIdx)
                 }
-                val shotPoseEnd = if (shotIdx == shotCount - 1) {
-                    poseEndScene
+                val poseStart = lastPoseEnd
+                val poseEnd = ScriptPools.POSE_CYCLE[(seed + globalClipIndex) % ScriptPools.POSE_CYCLE.size]
+                val dialogue = if (clipIdx == dialogueClipIdx && dialogueText.isNotBlank()) {
+                    DialogueLine(
+                        speaker = protagonist,
+                        tactic = "",
+                        tone = ScriptBeats.toneForTension(beat.tension),
+                        textId = "",
+                        textEn = dialogueText,
+                        language = input.dialogueLang,
+                        startSec = 5f,
+                        endSec = 10f
+                    )
                 } else {
-                    ScriptPools.POSE_FRAGMENTS[(seed + globalShotIndex + 1) % ScriptPools.POSE_FRAGMENTS.size]
+                    null
                 }
-                val priority = when {
-                    shotCount == 1 -> ShotPriority.A
-                    shotIdx == 0 || shotIdx == shotCount - 1 -> ShotPriority.A
-                    shotIdx % 2 == 0 -> ShotPriority.B
-                    else -> ShotPriority.C
+                val slugline = if (dialogue != null) {
+                    "INT. $worldShort - ${beat.timeOfDay}"
+                } else {
+                    "EXT. $worldShort - ${beat.timeOfDay}"
                 }
                 val transition = when {
-                    globalShotIndex == 0 -> ""
-                    shotIdx == 0 -> "MATCH CUT TO:"
+                    globalClipIndex == 0 -> ""
+                    clipIdx == 0 -> "MATCH CUT TO:"
                     else -> "CUT TO:"
                 }
-                shots.add(
-                    DraftShot(
-                        sceneOrder = beatIdx,
-                        orderIndex = shotIdx,
+                scenes.add(
+                    DraftScene(
+                        sceneNumber = globalClipIndex + 1,
+                        orderIndex = globalClipIndex,
+                        sequenceIndex = beat.index,
+                        beatName = beat.nameId,
+                        slugline = slugline,
+                        want = want,
+                        obstacle = obstacle,
+                        actionEn = action,
+                        dialogue = dialogue,
                         shotSize = shotSize,
                         angle = angle,
                         lensMm = lens,
                         cameraMove = move,
                         light = light,
-                        actionEn = action,
-                        poseStart = shotPoseStart,
-                        poseEnd = shotPoseEnd,
+                        poseStart = poseStart,
+                        poseEnd = poseEnd,
                         screenDirection = screenDirection,
                         axisSide = axisSide,
-                        priority = priority,
-                        shotFunction = functions[patternIdx % functions.size],
                         transition = transition,
-                        reAnchor = globalShotIndex > 0 && globalShotIndex % 5 == 4
+                        directorNote = directorNoteFor(beat, shotSize, lens, move),
+                        reAnchor = globalClipIndex > 0 && (globalClipIndex + 1) % 5 == 0
                     )
                 )
-                shotPoseStart = shotPoseEnd
-                globalShotIndex += 1
+                lastPoseEnd = poseEnd
+                globalClipIndex += 1
             }
-            lastPoseEnd = poseEndScene
         }
 
-        val total = shots.size
-        val generations = total * 3
+        val total = scenes.size
         val minutes = total / 6
         return ScriptDraft(
             input = input,
             scenes = scenes,
-            shots = shots,
             totalClips = total,
-            estimatedGenerations = generations,
-            estimatedCostId = "±$generations generasi • estimasi \$${minutes * 30}–\$${minutes * 50}",
+            estimatedGenerations = total,
+            estimatedCostId = "±$total generasi • estimasi \$${minutes * 30}–\$${minutes * 50}",
             estimatedHoursId = "±${minutes * 2}–${minutes * 4} jam generate + review"
         )
     }
 
-    // Coverage: dialog 2 orang = master + OTS + CU + insert + cutaway;
-    // aksi = wide penetap + medium + CU puncak + insert + exit wide.
-    fun coveragePattern(isDialogScene: Boolean): List<ShotSize> {
-        return if (isDialogScene) {
-            listOf(
-                ShotSize.TWO_SHOT,
-                ShotSize.OVER_SHOULDER,
-                ShotSize.CLOSEUP,
-                ShotSize.MEDIUM_CLOSEUP,
-                ShotSize.CLOSEUP,
-                ShotSize.EXTREME_CLOSEUP
-            )
-        } else {
-            listOf(
-                ShotSize.WIDE,
-                ShotSize.MEDIUM,
-                ShotSize.CLOSEUP,
-                ShotSize.EXTREME_CLOSEUP,
-                ShotSize.WIDE
-            )
-        }
-    }
-
-    fun coverageFunctions(isDialogScene: Boolean): List<ShotFunction> {
-        return if (isDialogScene) {
-            listOf(
-                ShotFunction.RELATION,
-                ShotFunction.RELATION,
-                ShotFunction.ACTION,
-                ShotFunction.DETAIL,
-                ShotFunction.ACTION,
-                ShotFunction.DETAIL
-            )
-        } else {
-            listOf(
-                ShotFunction.ESTABLISHING,
-                ShotFunction.ACTION,
-                ShotFunction.ACTION,
-                ShotFunction.DETAIL,
-                ShotFunction.SCALE
-            )
-        }
-    }
-
-    // Kembangkan ulang SATU sequence saja — sequence lain tidak berubah.
-    fun regenerateSequence(draft: ScriptDraft, sequenceOrder: Int, seed: Int): ScriptDraft {
+    // Kembangkan ulang SATU scene saja — scene lain tidak berubah.
+    // Pose awal/akhir scene TIDAK diubah (rantai kontinuitas tetap utuh);
+    // yang baru: aksi + ukuran shot + gerakan kamera dari pool (seed baru).
+    fun regenerateScene(draft: ScriptDraft, sceneOrderIndex: Int, seed: Int): ScriptDraft {
         val rebuilt = build(draft.input, seed)
-        val keptScenes = draft.scenes.filter { it.orderIndex != sequenceOrder }
-        val keptShots = draft.shots.filter { it.sceneOrder != sequenceOrder }
-        val newScenes = rebuilt.scenes.filter { it.orderIndex == sequenceOrder }
-        val newShots = rebuilt.shots.filter { it.sceneOrder == sequenceOrder }
-        // Rantai pose: pose awal sequence baru mengikuti pose akhir scene sebelumnya.
-        val prevPoseEnd = draft.scenes
-            .filter { it.orderIndex < sequenceOrder }
-            .maxByOrNull { it.orderIndex }?.poseEnd ?: "standing still"
-        val fixedScenes = newScenes.map { it.copy(poseStart = prevPoseEnd) }
-        val fixedShots = newShots.mapIndexed { idx, shot ->
-            if (idx == 0) shot.copy(poseStart = prevPoseEnd) else shot
+        val newScene = rebuilt.scenes.firstOrNull { it.orderIndex == sceneOrderIndex }
+            ?: return draft
+        val oldScene = draft.scenes.firstOrNull { it.orderIndex == sceneOrderIndex }
+            ?: return draft
+        val fixed = newScene.copy(
+            poseStart = oldScene.poseStart,
+            poseEnd = oldScene.poseEnd,
+            dialogue = oldScene.dialogue,
+            transition = oldScene.transition
+        )
+        val scenes = draft.scenes.map { scene ->
+            if (scene.orderIndex == sceneOrderIndex) fixed else scene
         }
-        // Rantai pose di batas AKHIR sequence baru: scene berikut memakai
-        // pose akhir sequence baru sebagai pose awalnya.
-        val newLastPoseEnd = fixedScenes.lastOrNull()?.poseEnd ?: prevPoseEnd
-        val allScenes = (keptScenes + fixedScenes).sortedBy { it.orderIndex }
-            .map { scene ->
-                if (scene.orderIndex == sequenceOrder + 1) {
-                    scene.copy(poseStart = newLastPoseEnd)
-                } else {
-                    scene
-                }
-            }
-        val allShots = (keptShots + fixedShots).sortedWith(
-            compareBy({ it.sceneOrder }, { it.orderIndex })
-        ).map { shot ->
-            if (shot.sceneOrder == sequenceOrder + 1 && shot.orderIndex == 0) {
-                shot.copy(poseStart = newLastPoseEnd)
-            } else {
-                shot
-            }
-        }
-        return draft.copy(scenes = allScenes, shots = allShots)
+        return draft.copy(scenes = scenes)
     }
 
-    // Satu shot -> ShotInput wizard (dipakai generate massal + ekspor).
+    // Satu scene flat -> ShotInput wizard (dipakai generate massal + ekspor).
     // Global Lock proyek diterapkan di atasnya (lock menang).
-    fun toShotInput(draft: ScriptDraft, shot: DraftShot, lock: GlobalLock? = null): ShotInput {
+    // Dialog menempel TEPAT SEKALI (di scene ini saja) — bukan 2x seperti v1.2.
+    fun toShotInput(draft: ScriptDraft, scene: DraftScene, lock: GlobalLock? = null): ShotInput {
         val input = draft.input
-        val scene = draft.scenes.firstOrNull { it.orderIndex == shot.sceneOrder }
         val base = ShotInput(
-            title = "S${shot.sceneOrder + 1} - Shot ${shot.orderIndex + 1}",
+            title = "Scene ${scene.sceneNumber} — ${scene.beatName}",
             genre = input.genre,
             style = input.style,
             engine = input.engine,
@@ -582,7 +656,10 @@ object ScriptEngine {
                 input.protagonistDescEn.ifBlank { "a young man in his twenties, lean build, worn jacket" }
             ),
             secondCharacter = if (input.antagonist.isNotBlank()) {
-                CharacterDna(input.antagonist, "a shadowy figure, cold eyes, dark coat")
+                CharacterDna(
+                    input.antagonist,
+                    input.antagonistDescEn.ifBlank { "a shadowy figure, cold eyes, dark coat" }
+                )
             } else {
                 null
             },
@@ -590,27 +667,25 @@ object ScriptEngine {
                 input.worldName.ifBlank { "Kota Tua" },
                 input.worldDescEn.ifBlank { "an old port city at dusk, crumbling warehouses, neon signs" }
             ),
-            shotSize = shot.shotSize,
-            angle = shot.angle,
-            lensMm = shot.lensMm,
-            cameraMove = shot.cameraMove,
-            light = shot.light,
-            actionEn = shot.actionEn,
-            poseStart = shot.poseStart,
-            poseEnd = shot.poseEnd,
+            shotSize = scene.shotSize,
+            angle = scene.angle,
+            lensMm = scene.lensMm,
+            cameraMove = scene.cameraMove,
+            light = scene.light,
+            actionEn = scene.actionEn,
+            poseStart = scene.poseStart,
+            poseEnd = scene.poseEnd,
             materialEn = "",
             audioEn = "",
-            dialogueName = scene?.dialogueName ?: "",
-            dialogueLine = if (shot.shotSize == ShotSize.OVER_SHOULDER || shot.shotSize == ShotSize.CLOSEUP) {
-                scene?.dialogueLine ?: ""
-            } else {
-                ""
-            },
+            dialogueName = scene.dialogue?.speaker ?: "",
+            dialogueLine = scene.dialogue?.activeText() ?: "",
+            dialogue = scene.dialogue,
+            characterCard = input.characterCard,
             focusMode = FocusMode.FULL_STABLE,
             hideTactic = HideTactic.NONE,
-            screenDirection = shot.screenDirection,
-            axisSide = shot.axisSide,
-            transition = shot.transition
+            screenDirection = scene.screenDirection,
+            axisSide = scene.axisSide,
+            transition = scene.transition
         )
         return lock?.applyTo(base) ?: base
     }
@@ -627,6 +702,7 @@ object ScriptTemplates {
         protagonistName = "Raka",
         protagonistDescEn = "a young courier in his twenties, lean build, worn jacket, tired eyes",
         antagonist = "Kolektor",
+        antagonistDescEn = "a wealthy collector in a dark suit, cold eyes, calm voice",
         worldName = "Kota Tua",
         worldDescEn = "an old port city at dusk, crumbling warehouses, neon signs, rain-slicked streets",
         conflict = "paket berisi chip yang mematikan listrik kota",
@@ -661,6 +737,7 @@ object ScriptTemplates {
         protagonistName = "Mira",
         protagonistDescEn = "a young woman in her twenties, pale face, dark hair, trembling hands",
         antagonist = "Suara dari Lemari",
+        antagonistDescEn = "an unseen presence in the dark wardrobe, whispering voice",
         worldName = "Rumah Kosong",
         worldDescEn = "an empty house at night, peeling walls, dust in the air, a dark wardrobe",
         conflict = "ketukan dari dalam lemari",

@@ -14,21 +14,20 @@ import com.daftech.promptku.data.PromptKuDatabase
 import com.daftech.promptku.data.SceneItem
 import com.daftech.promptku.data.ScriptItem
 import com.daftech.promptku.data.ScriptSceneItem
-import com.daftech.promptku.data.ScriptShotItem
 import com.daftech.promptku.data.toDraftScene
-import com.daftech.promptku.data.toDraftShot
 import com.daftech.promptku.data.toGlobalLock
 import com.daftech.promptku.data.toScriptInput
 import com.daftech.promptku.data.toScriptItem
 import com.daftech.promptku.data.toScriptSceneItem
-import com.daftech.promptku.data.toScriptShotItem
 import com.daftech.promptku.data.withLock
 import com.daftech.promptku.engine.CameraAngle
 import com.daftech.promptku.engine.CameraMove
+import com.daftech.promptku.engine.CharacterCard
 import com.daftech.promptku.engine.CharacterDna
+import com.daftech.promptku.engine.DialogueLang
+import com.daftech.promptku.engine.DialogueLine
 import com.daftech.promptku.engine.Dice
 import com.daftech.promptku.engine.DraftScene
-import com.daftech.promptku.engine.DraftShot
 import com.daftech.promptku.engine.FocusMode
 import com.daftech.promptku.engine.FountainExport
 import com.daftech.promptku.engine.GalleryTemplate
@@ -125,10 +124,21 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
     var scriptScenes by mutableStateOf<Map<Long, List<ScriptSceneItem>>>(emptyMap())
         private set
 
-    var scriptShots by mutableStateOf<Map<Long, List<ScriptShotItem>>>(emptyMap())
+    var activeScriptId by mutableStateOf<Long?>(null)
         private set
 
-    var activeScriptId by mutableStateOf<Long?>(null)
+    // Prompt Score v4 (v1.3) untuk wizard + preview scene naskah.
+    var scoreV4 by mutableStateOf<ScoreResult?>(null)
+        private set
+
+    // Preview prompt per scene (Mode Naskah): scene + prompt + skor v4.
+    var scriptPreviewScene by mutableStateOf<DraftScene?>(null)
+        private set
+
+    var scriptPreviewPrompt by mutableStateOf<GeneratedPrompt?>(null)
+        private set
+
+    var scriptPreviewScore by mutableStateOf<ScoreResult?>(null)
         private set
 
     init {
@@ -162,13 +172,10 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
             val scrpts = withContext(Dispatchers.IO) { db.scriptDao().allScripts() }
             scripts = scrpts
             val scrScenes = mutableMapOf<Long, List<ScriptSceneItem>>()
-            val scrShots = mutableMapOf<Long, List<ScriptShotItem>>()
             for (script in scrpts) {
                 scrScenes[script.id] = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(script.id) }
-                scrShots[script.id] = withContext(Dispatchers.IO) { db.scriptDao().shotsOf(script.id) }
             }
             scriptScenes = scrScenes
-            scriptShots = scrShots
         }
     }
 
@@ -275,6 +282,21 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         input = input.copy(dialogueName = name, dialogueLine = line)
     }
 
+    // Dialog wizard v1.3 — DialogueLine lengkap (ID/EN + taktik + nada).
+    // Field lama dialogueName/dialogueLine ikut dicerminkan supaya
+    // template + ekspor lama tetap membaca baris yang sama.
+    fun updateWizardDialogue(line: DialogueLine) {
+        input = input.copy(
+            dialogue = if (line.isEmpty() && line.speaker.isBlank()) null else line,
+            dialogueName = line.speaker,
+            dialogueLine = line.activeText()
+        )
+    }
+
+    fun updateCharacterCard(card: CharacterCard?) {
+        input = input.copy(characterCard = card)
+    }
+
     fun updateFocus(focus: FocusMode) {
         input = input.copy(focusMode = focus)
     }
@@ -303,6 +325,7 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         generatedAll = emptyList()
         resultEngineIndex = 0
         score = null
+        scoreV4 = null
         activeProjectId = null
         activeLock = null
     }
@@ -368,10 +391,16 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
             null -> 0
         }
         score = PromptScore.score(current)
+        val active = generatedAll.getOrNull(resultEngineIndex)
+        scoreV4 = PromptScore.scoreV4(current, active)
     }
 
     fun updateResultEngine(index: Int) {
         resultEngineIndex = index.coerceIn(0, 3)
+        val active = generatedAll.getOrNull(resultEngineIndex)
+        if (active != null) {
+            scoreV4 = PromptScore.scoreV4(input, active)
+        }
     }
 
     fun saveCurrentToHistory() {
@@ -528,23 +557,22 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         scriptDraft = null
         scriptScore = null
         activeScriptId = null
+        clearScriptPreview()
     }
 
     private fun draftFromItems(
         item: ScriptItem,
-        scenes: List<ScriptSceneItem>,
-        shots: List<ScriptShotItem>
+        scenes: List<ScriptSceneItem>
     ): ScriptDraft {
         val input = item.toScriptInput()
-        val total = shots.size
+        val total = scenes.size
         val minutes = total / 6
         return ScriptDraft(
             input = input,
             scenes = scenes.map { it.toDraftScene() },
-            shots = shots.map { it.toDraftShot() },
             totalClips = total,
-            estimatedGenerations = total * 3,
-            estimatedCostId = "±${total * 3} generasi • estimasi \$${minutes * 30}–\$${minutes * 50}",
+            estimatedGenerations = total,
+            estimatedCostId = "±$total generasi • estimasi \$${minutes * 30}–\$${minutes * 50}",
             estimatedHoursId = "±${minutes * 2}–${minutes * 4} jam generate + review"
         )
     }
@@ -561,7 +589,6 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
             val scriptId = withContext(Dispatchers.IO) {
                 val id = db.scriptDao().insertScript(input.toScriptItem("DRAFT"))
                 db.scriptDao().insertScenes(draft.scenes.map { it.toScriptSceneItem(id) })
-                db.scriptDao().insertShots(draft.shots.map { it.toScriptShotItem(id) })
                 id
             }
             activeScriptId = scriptId
@@ -569,7 +596,7 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
             scriptScore = ScriptScore.score(draft)
             scriptStep = 4
             refreshAll()
-            statusMessage = "Naskah dikembangkan: ${draft.scenes.size} scene, ${draft.totalClips} klip. Baca dan setujui per sequence."
+            statusMessage = "Naskah dikembangkan: ${draft.totalClips} scene (1 scene = 1 klip). Baca dan setujui per scene."
         }
     }
 
@@ -579,8 +606,7 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                 db.scriptDao().allScripts().firstOrNull { it.id == scriptId }
             } ?: return@launch
             val scenes = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
-            val shots = withContext(Dispatchers.IO) { db.scriptDao().shotsOf(scriptId) }
-            val draft = draftFromItems(item, scenes, shots)
+            val draft = draftFromItems(item, scenes)
             activeScriptId = scriptId
             scriptInput = item.toScriptInput()
             scriptDraft = draft
@@ -589,28 +615,31 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Kembangkan ulang SATU sequence saja (variasi baru dari pool).
-    fun regenerateScriptSequence(orderIndex: Int, seed: Int) {
+    // Kembangkan ulang SATU scene saja (variasi baru dari pool).
+    // Pose awal/akhir scene tidak berubah — rantai kontinuitas tetap utuh.
+    fun regenerateScriptScene(orderIndex: Int, seed: Int) {
         val draft = scriptDraft ?: return
         val scriptId = activeScriptId ?: return
         viewModelScope.launch {
-            val rebuilt = ScriptEngine.regenerateSequence(draft, orderIndex, seed)
+            val rebuilt = ScriptEngine.regenerateScene(draft, orderIndex, seed)
+            val newScene = rebuilt.scenes.firstOrNull { it.orderIndex == orderIndex }
+                ?: return@launch
+            val oldItems = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
+            val oldItem = oldItems.firstOrNull { it.orderIndex == orderIndex }
+                ?: return@launch
             withContext(Dispatchers.IO) {
-                db.scriptDao().deleteScenesOfSequence(scriptId, orderIndex)
-                db.scriptDao().deleteShotsOfScene(scriptId, orderIndex)
-                val newScenes = rebuilt.scenes.filter { it.orderIndex == orderIndex }
-                val newShots = rebuilt.shots.filter { it.sceneOrder == orderIndex }
-                db.scriptDao().insertScenes(newScenes.map { it.toScriptSceneItem(scriptId) })
-                db.scriptDao().insertShots(newShots.map { it.toScriptShotItem(scriptId) })
+                db.scriptDao().updateScene(
+                    newScene.toScriptSceneItem(scriptId).copy(id = oldItem.id, approved = oldItem.approved)
+                )
             }
             scriptDraft = rebuilt
             scriptScore = ScriptScore.score(rebuilt)
             refreshAll()
-            statusMessage = "Sequence ${orderIndex + 1} dikembangkan ulang."
+            statusMessage = "Scene ${orderIndex + 1} dikembangkan ulang."
         }
     }
 
-    fun approveScriptSequence(scriptId: Long, orderIndex: Int) {
+    fun approveScriptScene(scriptId: Long, orderIndex: Int) {
         viewModelScope.launch {
             val scenes = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
             withContext(Dispatchers.IO) {
@@ -623,7 +652,7 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                 loadScript(scriptId)
             }
             refreshAll()
-            statusMessage = "Sequence ${orderIndex + 1} disetujui."
+            statusMessage = "Scene ${orderIndex + 1} disetujui."
         }
     }
 
@@ -645,44 +674,9 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
 
     fun updateScriptScene(item: ScriptSceneItem) {
         viewModelScope.launch {
-            val old = withContext(Dispatchers.IO) {
-                db.scriptDao().scenesOf(item.scriptId).firstOrNull { it.id == item.id }
-            }
             withContext(Dispatchers.IO) {
                 db.scriptDao().updateScene(item)
-                // Aksi scene yang diubah ikut ke shot-shotnya — kecuali shot
-                // yang aksinya sudah diedit sendiri (berbeda dari aksi lama).
-                if (old != null && old.actionEn != item.actionEn) {
-                    val shots = db.scriptDao().shotsOf(item.scriptId)
-                    shots.filter {
-                        it.sceneOrder == item.orderIndex && it.actionEn == old.actionEn
-                    }.forEach { shot ->
-                        db.scriptDao().updateShot(shot.copy(actionEn = item.actionEn))
-                    }
-                }
             }
-            val scriptId = activeScriptId
-            if (scriptId != null) {
-                loadScript(scriptId)
-            }
-            refreshAll()
-        }
-    }
-
-    fun updateScriptShot(item: ScriptShotItem) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { db.scriptDao().updateShot(item) }
-            val scriptId = activeScriptId
-            if (scriptId != null) {
-                loadScript(scriptId)
-            }
-            refreshAll()
-        }
-    }
-
-    fun deleteScriptShot(item: ScriptShotItem) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { db.scriptDao().deleteShot(item) }
             val scriptId = activeScriptId
             if (scriptId != null) {
                 loadScript(scriptId)
@@ -695,7 +689,6 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 db.scriptDao().deleteScene(item)
-                db.scriptDao().deleteShotsOfScene(item.scriptId, item.orderIndex)
             }
             val scriptId = activeScriptId
             if (scriptId != null) {
@@ -717,7 +710,7 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Generate prompt massal: hanya shot dari sequence yang disetujui.
+    // Generate prompt massal: hanya scene yang disetujui.
     // Prompt masuk ke Proyek (dibuat baru bila belum ada) dengan Global
     // Lock proyek diterapkan. Naskah berstatus GENERATED sesudahnya.
     fun generateScriptPrompts(scriptId: Long, onReady: (Long) -> Unit) {
@@ -726,14 +719,13 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                 db.scriptDao().allScripts().firstOrNull { it.id == scriptId }
             } ?: return@launch
             val scenes = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
-            val shots = withContext(Dispatchers.IO) { db.scriptDao().shotsOf(scriptId) }
             val approvedOrders = scenes.filter { it.approved }.map { it.orderIndex }.toSet()
             if (approvedOrders.isEmpty()) {
-                statusMessage = "Setujui minimal 1 sequence dulu sebelum generate."
+                statusMessage = "Setujui minimal 1 scene dulu sebelum generate."
                 return@launch
             }
-            val draft = draftFromItems(item, scenes, shots)
-            val approvedShots = draft.shots.filter { it.sceneOrder in approvedOrders }
+            val draft = draftFromItems(item, scenes)
+            val approvedScenes = draft.scenes.filter { it.orderIndex in approvedOrders }
             val existing = withContext(Dispatchers.IO) {
                 db.projectDao().allProjects().firstOrNull { it.title == item.title }
             }
@@ -747,8 +739,8 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                 db.projectDao().scenesOf(projectId).size
             }
             withContext(Dispatchers.IO) {
-                approvedShots.forEachIndexed { index, shot ->
-                    val shotInput = ScriptEngine.toShotInput(draft, shot, lock)
+                approvedScenes.forEachIndexed { index, scene ->
+                    val shotInput = ScriptEngine.toShotInput(draft, scene, lock)
                     val prompt = PromptEngine.build(shotInput)
                     db.projectDao().insertScene(
                         SceneItem(
@@ -759,17 +751,44 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                             promptText = prompt.text,
                             negativeText = prompt.negativePrompt ?: "",
                             createdAt = System.currentTimeMillis(),
-                            poseStart = shot.poseStart,
-                            poseEnd = shot.poseEnd
+                            poseStart = scene.poseStart,
+                            poseEnd = scene.poseEnd
                         )
                     )
                 }
                 db.scriptDao().updateScript(item.copy(status = "GENERATED"))
             }
             refreshAll()
-            statusMessage = "${approvedShots.size} prompt masuk ke proyek '${item.title}'."
+            statusMessage = "${approvedScenes.size} prompt masuk ke proyek '${item.title}'."
             onReady(projectId)
         }
+    }
+
+    // Preview prompt SATU scene sebelum generate massal (v1.3):
+    // prompt + meter anggaran + Skor v4, tanpa menulis ke database.
+    fun previewScriptScene(scene: DraftScene) {
+        val draft = scriptDraft ?: return
+        val shotInput = ScriptEngine.toShotInput(draft, scene)
+        val prompt = PromptEngine.build(shotInput)
+        scriptPreviewScene = scene
+        scriptPreviewPrompt = prompt
+        scriptPreviewScore = PromptScore.scoreV4(shotInput, prompt)
+    }
+
+    fun clearScriptPreview() {
+        scriptPreviewScene = null
+        scriptPreviewPrompt = null
+        scriptPreviewScore = null
+    }
+
+    // Bahasa dialog default naskah (ID/EN) — toggle per naskah.
+    fun updateScriptDialogueLang(lang: DialogueLang) {
+        scriptInput = scriptInput.copy(dialogueLang = lang)
+    }
+
+    // Kartu 3 jangkar tokoh naskah.
+    fun updateScriptCharacterCard(card: CharacterCard?) {
+        scriptInput = scriptInput.copy(characterCard = card)
     }
 
     // Ekspor .fountain (naskah murni) ke folder Download.
@@ -779,8 +798,7 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                 db.scriptDao().allScripts().firstOrNull { it.id == scriptId }
             } ?: return@launch
             val scenes = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
-            val shots = withContext(Dispatchers.IO) { db.scriptDao().shotsOf(scriptId) }
-            val draft = draftFromItems(item, scenes, shots)
+            val draft = draftFromItems(item, scenes)
             val content = FountainExport.buildFountain(draft)
             val fileName = "PromptKu-${item.title.replace(Regex("[^A-Za-z0-9_-]"), "-")}-naskah.fountain"
             val uri = ExportHelper.exportTextToDownloads(getApplication(), fileName, content)
@@ -792,23 +810,21 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Ekspor .txt (naskah + shot list + prompt + Global Lock) ke Download.
+    // Ekspor .txt (naskah + prompt + Global Lock) ke Download.
     fun exportScriptText(scriptId: Long) {
         viewModelScope.launch {
             val item = withContext(Dispatchers.IO) {
                 db.scriptDao().allScripts().firstOrNull { it.id == scriptId }
             } ?: return@launch
             val scenes = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
-            val shots = withContext(Dispatchers.IO) { db.scriptDao().shotsOf(scriptId) }
-            val draft = draftFromItems(item, scenes, shots)
-            val approvedOrders = scenes.filter { it.approved }.map { it.orderIndex }.toSet()
+            val draft = draftFromItems(item, scenes)
             val project = withContext(Dispatchers.IO) {
                 db.projectDao().allProjects().firstOrNull { it.title == item.title }
             }
             val lock = project?.toGlobalLock() ?: GlobalLock()
-            val prompts = draft.shots.map { shot ->
-                val shotInput = ScriptEngine.toShotInput(draft, shot, lock)
-                shot to PromptEngine.build(shotInput)
+            val prompts = draft.scenes.map { scene ->
+                val shotInput = ScriptEngine.toShotInput(draft, scene, lock)
+                scene to PromptEngine.build(shotInput)
             }
             val content = FountainExport.buildScriptText(draft, prompts, lock)
             val fileName = "PromptKu-${item.title.replace(Regex("[^A-Za-z0-9_-]"), "-")}-naskah-prompt.txt"

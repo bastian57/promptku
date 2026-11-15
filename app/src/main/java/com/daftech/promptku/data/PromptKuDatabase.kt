@@ -16,16 +16,16 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.daftech.promptku.engine.CameraAngle
 import com.daftech.promptku.engine.CameraMove
+import com.daftech.promptku.engine.CharacterCard
 import com.daftech.promptku.engine.CharacterDna
+import com.daftech.promptku.engine.DialogueLang
+import com.daftech.promptku.engine.DialogueLine
 import com.daftech.promptku.engine.DraftScene
-import com.daftech.promptku.engine.DraftShot
 import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.GlobalLock
 import com.daftech.promptku.engine.LightKind
 import com.daftech.promptku.engine.ScriptEnding
 import com.daftech.promptku.engine.ScriptInput
-import com.daftech.promptku.engine.ShotFunction
-import com.daftech.promptku.engine.ShotPriority
 import com.daftech.promptku.engine.ShotSize
 import com.daftech.promptku.engine.TargetEngine
 import com.daftech.promptku.engine.VisualStyle
@@ -69,7 +69,9 @@ data class ProjectItem(
     val lockCharName: String? = null,
     val lockCharEn: String? = null,
     val lockChar2Name: String? = null,
-    val lockChar2En: String? = null
+    val lockChar2En: String? = null,
+    // Ambience Lock v1.3 — suara latar yang sama di semua klip.
+    val lockAmbience: String? = null
 )
 
 @Entity(
@@ -128,8 +130,10 @@ interface DnaDao {
     suspend fun delete(item: DnaItem)
 }
 
-// Naskah v1.2 — 2 level: Scene dramatis -> Shot (1 klip = 1 prompt).
-// Status: DRAFT -> APPROVED (per sequence) -> GENERATED.
+// Naskah v1.3 — FLAT: 1 scene = 1 klip 10 detik = 1 prompt.
+// Status: DRAFT -> APPROVED (per scene) -> GENERATED.
+// Tabel script_shots peninggalan v1.2 (model 2 tingkat) TIDAK lagi
+// dibaca app v1.3+ — datanya tetap ada di file DB, tidak dihapus.
 @Entity(tableName = "scripts")
 data class ScriptItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -141,6 +145,7 @@ data class ScriptItem(
     val protagonistName: String,
     val protagonistDescEn: String,
     val antagonist: String,
+    val antagonistDescEn: String = "",
     val worldName: String,
     val worldDescEn: String,
     val conflict: String,
@@ -148,7 +153,13 @@ data class ScriptItem(
     val style: String,
     val engine: String,
     val status: String,
-    val createdAt: Long
+    val createdAt: Long,
+    // v1.3 — bahasa dialog default naskah + kartu 3 jangkar tokoh.
+    val dialogueLang: String = "EN",
+    val cardTrait: String? = null,
+    val cardGesture: String? = null,
+    val cardObject: String? = null,
+    val cardFace: String? = null
 )
 
 @Entity(
@@ -176,36 +187,26 @@ data class ScriptSceneItem(
     val poseEnd: String,
     val screenDirection: String,
     val axisSide: String,
-    val approved: Boolean = false
-)
-
-@Entity(
-    tableName = "script_shots",
-    foreignKeys = [ForeignKey(
-        entity = ScriptItem::class,
-        parentColumns = ["id"],
-        childColumns = ["scriptId"],
-        onDelete = ForeignKey.CASCADE
-    )]
-)
-data class ScriptShotItem(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val scriptId: Long,
-    val sceneOrder: Int,
-    val orderIndex: Int,
-    val shotSize: String,
-    val angle: String,
-    val lensMm: Int,
-    val cameraMove: String,
-    val light: String,
-    val actionEn: String,
-    val poseStart: String,
-    val poseEnd: String,
-    val screenDirection: String,
-    val axisSide: String,
-    val priority: String,
-    val shotFunction: String,
-    val transition: String,
+    val approved: Boolean = false,
+    // v1.3 — DialogueLine lengkap (ID/EN + taktik + nada + timing).
+    // dialogueName/dialogueLine di atas tetap ditulis sebagai cermin
+    // (speaker + teks aktif) untuk pembaca lama.
+    val dialogueTextId: String = "",
+    val dialogueTextEn: String = "",
+    val dialogueLang: String = "EN",
+    val dialogueTactic: String = "",
+    val dialogueTone: String = "",
+    val dialogueStartSec: Float = 0f,
+    val dialogueEndSec: Float = 0f,
+    // v1.3 — parameter shot scene flat (1 scene = 1 klip).
+    val sceneNumber: Int = 0,
+    val shotSize: String = "",
+    val angle: String = "",
+    val lensMm: Int = 0,
+    val cameraMove: String = "",
+    val light: String = "",
+    val transition: String = "",
+    val directorNote: String = "",
     val reAnchor: Boolean = false
 )
 
@@ -240,24 +241,6 @@ interface ScriptDao {
 
     @Query("DELETE FROM script_scenes WHERE scriptId = :scriptId AND orderIndex = :orderIndex")
     suspend fun deleteScenesOfSequence(scriptId: Long, orderIndex: Int)
-
-    @Insert
-    suspend fun insertShot(item: ScriptShotItem): Long
-
-    @Insert
-    suspend fun insertShots(items: List<ScriptShotItem>)
-
-    @Update
-    suspend fun updateShot(item: ScriptShotItem)
-
-    @Query("SELECT * FROM script_shots WHERE scriptId = :scriptId ORDER BY sceneOrder ASC, orderIndex ASC")
-    suspend fun shotsOf(scriptId: Long): List<ScriptShotItem>
-
-    @Delete
-    suspend fun deleteShot(item: ScriptShotItem)
-
-    @Query("DELETE FROM script_shots WHERE scriptId = :scriptId AND sceneOrder = :sceneOrder")
-    suspend fun deleteShotsOfScene(scriptId: Long, sceneOrder: Int)
 }
 
 @Dao
@@ -324,7 +307,8 @@ fun ProjectItem.toGlobalLock(): GlobalLock {
             CharacterDna(lockChar2Name, lockChar2En)
         } else {
             null
-        }
+        },
+        ambience = lockAmbience
     )
 }
 
@@ -338,7 +322,8 @@ fun ProjectItem.withLock(lock: GlobalLock): ProjectItem {
         lockCharName = lock.character?.name,
         lockCharEn = lock.character?.descriptionEn,
         lockChar2Name = lock.secondCharacter?.name,
-        lockChar2En = lock.secondCharacter?.descriptionEn
+        lockChar2En = lock.secondCharacter?.descriptionEn,
+        lockAmbience = lock.ambience
     )
 }
 
@@ -390,8 +375,55 @@ val MIGRATION_2_3: Migration = object : Migration(2, 3) {
     }
 }
 
+// Migrasi v3 -> v4 (v1.3): SEMUA kolom baru aditif dengan default,
+// database lama (v1.2.x) naik tanpa hapus data.
+// - projects: Ambience Lock.
+// - scripts: bahasa dialog default + deskripsi antagonis + kartu 3 jangkar.
+// - script_scenes: DialogueLine lengkap + parameter shot scene flat.
+// Tabel script_shots peninggalan v1.2 TIDAK disentuh (tetap di file DB).
+val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE projects ADD COLUMN lockAmbience TEXT")
+        db.execSQL("ALTER TABLE scripts ADD COLUMN antagonistDescEn TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE scripts ADD COLUMN dialogueLang TEXT NOT NULL DEFAULT 'EN'")
+        db.execSQL("ALTER TABLE scripts ADD COLUMN cardTrait TEXT")
+        db.execSQL("ALTER TABLE scripts ADD COLUMN cardGesture TEXT")
+        db.execSQL("ALTER TABLE scripts ADD COLUMN cardObject TEXT")
+        db.execSQL("ALTER TABLE scripts ADD COLUMN cardFace TEXT")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueTextId TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueTextEn TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueLang TEXT NOT NULL DEFAULT 'EN'")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueTactic TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueTone TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueStartSec REAL NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN dialogueEndSec REAL NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN sceneNumber INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN shotSize TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN angle TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN lensMm INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN cameraMove TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN light TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN transition TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN directorNote TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN reAnchor INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 // Konversi ScriptItem <-> ScriptInput (enum dibaca dengan runCatching).
 fun ScriptItem.toScriptInput(): ScriptInput {
+    val card = if (
+        cardTrait.isNullOrBlank() && cardGesture.isNullOrBlank() &&
+        cardObject.isNullOrBlank() && cardFace.isNullOrBlank()
+    ) {
+        null
+    } else {
+        CharacterCard(
+            trait = cardTrait ?: "",
+            gesture = cardGesture ?: "",
+            objectProp = cardObject ?: "",
+            faceAnchor = cardFace ?: ""
+        )
+    }
     return ScriptInput(
         title = title,
         synopsis = synopsis,
@@ -401,12 +433,15 @@ fun ScriptItem.toScriptInput(): ScriptInput {
         protagonistName = protagonistName,
         protagonistDescEn = protagonistDescEn,
         antagonist = antagonist,
+        antagonistDescEn = antagonistDescEn,
         worldName = worldName,
         worldDescEn = worldDescEn,
         conflict = conflict,
         ending = runCatching { ScriptEnding.valueOf(ending) }.getOrDefault(ScriptEnding.HAPPY),
         style = runCatching { VisualStyle.valueOf(style) }.getOrDefault(VisualStyle.REALISTIC),
-        engine = runCatching { TargetEngine.valueOf(engine) }.getOrDefault(TargetEngine.FLOW)
+        engine = runCatching { TargetEngine.valueOf(engine) }.getOrDefault(TargetEngine.FLOW),
+        dialogueLang = runCatching { DialogueLang.valueOf(dialogueLang) }.getOrDefault(DialogueLang.EN),
+        characterCard = card
     )
 }
 
@@ -420,6 +455,7 @@ fun ScriptInput.toScriptItem(status: String = "DRAFT"): ScriptItem {
         protagonistName = protagonistName,
         protagonistDescEn = protagonistDescEn,
         antagonist = antagonist,
+        antagonistDescEn = antagonistDescEn,
         worldName = worldName,
         worldDescEn = worldDescEn,
         conflict = conflict,
@@ -427,11 +463,17 @@ fun ScriptInput.toScriptItem(status: String = "DRAFT"): ScriptItem {
         style = style.name,
         engine = engine.name,
         status = status,
-        createdAt = System.currentTimeMillis()
+        createdAt = System.currentTimeMillis(),
+        dialogueLang = dialogueLang.name,
+        cardTrait = characterCard?.trait?.ifBlank { null },
+        cardGesture = characterCard?.gesture?.ifBlank { null },
+        cardObject = characterCard?.objectProp?.ifBlank { null },
+        cardFace = characterCard?.faceAnchor?.ifBlank { null }
     )
 }
 
 fun DraftScene.toScriptSceneItem(scriptId: Long): ScriptSceneItem {
+    val line = dialogue
     return ScriptSceneItem(
         scriptId = scriptId,
         orderIndex = orderIndex,
@@ -441,73 +483,73 @@ fun DraftScene.toScriptSceneItem(scriptId: Long): ScriptSceneItem {
         want = want,
         obstacle = obstacle,
         actionEn = actionEn,
-        dialogueName = dialogueName,
-        dialogueLine = dialogueLine,
+        dialogueName = line?.speaker ?: "",
+        dialogueLine = line?.activeText() ?: "",
         poseStart = poseStart,
         poseEnd = poseEnd,
         screenDirection = screenDirection,
         axisSide = axisSide,
-        approved = false
-    )
-}
-
-fun ScriptSceneItem.toDraftScene(): DraftScene {
-    return DraftScene(
-        sequenceIndex = sequenceIndex,
-        orderIndex = orderIndex,
-        beatName = beatName,
-        slugline = slugline,
-        want = want,
-        obstacle = obstacle,
-        actionEn = actionEn,
-        dialogueName = dialogueName,
-        dialogueLine = dialogueLine,
-        poseStart = poseStart,
-        poseEnd = poseEnd,
-        screenDirection = screenDirection,
-        axisSide = axisSide
-    )
-}
-
-fun DraftShot.toScriptShotItem(scriptId: Long): ScriptShotItem {
-    return ScriptShotItem(
-        scriptId = scriptId,
-        sceneOrder = sceneOrder,
-        orderIndex = orderIndex,
+        approved = false,
+        dialogueTextId = line?.textId ?: "",
+        dialogueTextEn = line?.textEn ?: "",
+        dialogueLang = line?.language?.name ?: "EN",
+        dialogueTactic = line?.tactic ?: "",
+        dialogueTone = line?.tone ?: "",
+        dialogueStartSec = line?.startSec ?: 0f,
+        dialogueEndSec = line?.endSec ?: 0f,
+        sceneNumber = sceneNumber,
         shotSize = shotSize.name,
         angle = angle.name,
         lensMm = lensMm,
         cameraMove = cameraMove.name,
         light = light.name,
-        actionEn = actionEn,
-        poseStart = poseStart,
-        poseEnd = poseEnd,
-        screenDirection = screenDirection,
-        axisSide = axisSide,
-        priority = priority.name,
-        shotFunction = shotFunction.name,
         transition = transition,
+        directorNote = directorNote,
         reAnchor = reAnchor
     )
 }
 
-fun ScriptShotItem.toDraftShot(): DraftShot {
-    return DraftShot(
-        sceneOrder = sceneOrder,
+fun ScriptSceneItem.toDraftScene(): DraftScene {
+    // Baris lama (v1.2) tidak punya kolom dialog baru: dialogueLine lama
+    // dibaca sebagai teks Inggris, shotSize kosong -> MEDIUM, lens 0 -> 35.
+    val line = if (
+        dialogueTextId.isBlank() && dialogueTextEn.isBlank() &&
+        dialogueLine.isBlank()
+    ) {
+        null
+    } else {
+        DialogueLine(
+            speaker = dialogueName,
+            tactic = dialogueTactic,
+            tone = dialogueTone,
+            textId = dialogueTextId,
+            textEn = dialogueTextEn.ifBlank { dialogueLine },
+            language = runCatching { DialogueLang.valueOf(dialogueLang) }.getOrDefault(DialogueLang.EN),
+            startSec = dialogueStartSec,
+            endSec = dialogueEndSec
+        )
+    }
+    return DraftScene(
+        sceneNumber = if (sceneNumber > 0) sceneNumber else orderIndex + 1,
         orderIndex = orderIndex,
+        sequenceIndex = sequenceIndex,
+        beatName = beatName,
+        slugline = slugline,
+        want = want,
+        obstacle = obstacle,
+        actionEn = actionEn,
+        dialogue = line,
         shotSize = runCatching { ShotSize.valueOf(shotSize) }.getOrDefault(ShotSize.MEDIUM),
         angle = runCatching { CameraAngle.valueOf(angle) }.getOrDefault(CameraAngle.EYE),
-        lensMm = lensMm,
+        lensMm = if (lensMm > 0) lensMm else 35,
         cameraMove = runCatching { CameraMove.valueOf(cameraMove) }.getOrDefault(CameraMove.STATIC),
         light = runCatching { LightKind.valueOf(light) }.getOrDefault(LightKind.GOLDEN_HOUR),
-        actionEn = actionEn,
         poseStart = poseStart,
         poseEnd = poseEnd,
         screenDirection = screenDirection,
         axisSide = axisSide,
-        priority = runCatching { ShotPriority.valueOf(priority) }.getOrDefault(ShotPriority.B),
-        shotFunction = runCatching { ShotFunction.valueOf(shotFunction) }.getOrDefault(ShotFunction.ACTION),
         transition = transition,
+        directorNote = directorNote,
         reAnchor = reAnchor
     )
 }
@@ -515,9 +557,9 @@ fun ScriptShotItem.toDraftShot(): DraftShot {
 @Database(
     entities = [
         HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class,
-        ScriptItem::class, ScriptSceneItem::class, ScriptShotItem::class
+        ScriptItem::class, ScriptSceneItem::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class PromptKuDatabase : RoomDatabase() {
@@ -536,7 +578,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
                     context.applicationContext,
                     PromptKuDatabase::class.java,
                     "promptku.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
         }
     }

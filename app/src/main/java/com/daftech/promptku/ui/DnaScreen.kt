@@ -31,7 +31,7 @@ fun DnaScreen(viewModel: PromptKuViewModel) {
         item {
             Text(text = "DNA Lock Library", style = MaterialTheme.typography.headlineSmall)
             Text(
-                text = "DNA ditempel verbatim di semua scene — inilah yang menjaga muka dan dunia tetap sama. Tulis deskripsi dalam Bahasa Inggris.",
+                text = "DNA tersimpan di library. Prompt v1.3 memakai kartu 3 jangkar (~12-15 kata), bukan DNA panjang — DNA panjang tidak ditempel supaya dunia/aksi/audio tidak terpotong (bug trim v1.2.0).",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -48,6 +48,12 @@ fun DnaScreen(viewModel: PromptKuViewModel) {
                 label = { Text("Deskripsi Inggris (verbatim)") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3
+            )
+            val descWords = description.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+            Text(
+                text = "$descWords kata" +
+                    if (descWords > 40) " — DNA panjang, simpan di sini saja; buat kartu 3 jangkar di wizard/naskah untuk prompt." else "",
+                style = MaterialTheme.typography.bodySmall
             )
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = { kind = if (kind == "CHARACTER") "WORLD" else "CHARACTER" }) {
