@@ -114,6 +114,72 @@ object PromptEngine {
         return main + second
     }
 
+    // Pangkas DNA di batas kalimat ke anggaran yang tersisa (v1.2.1).
+    // DNA verbatim panjang (kasus Riko: 129 kata) duduk di tengah kalimat 1
+    // dan membuat trim memotong dunia/kamera/cahaya/aksi/audio dari belakang.
+    // Kembalikan DNA yang terpotong rapi + peringatan, atau DNA utuh + null.
+    private fun capDnaAtSentence(
+        dna: String,
+        allowed: Int,
+        name: String,
+        maxWords: Int
+    ): Pair<String, String?> {
+        val fullWords = MythFilter.countWords(dna)
+        if (fullWords <= allowed) return dna to null
+        val sentences = dna.split(Regex("(?<=[.!])\\s+"))
+        val kept = mutableListOf<String>()
+        var count = 0
+        for (sentence in sentences) {
+            val w = MythFilter.countWords(sentence)
+            if (count + w <= allowed) {
+                kept.add(sentence)
+                count += w
+            } else {
+                break
+            }
+        }
+        var capped = kept.joinToString(" ")
+        if (capped.isBlank()) {
+            capped = dna.split(Regex("\\s+")).take(allowed).joinToString(" ")
+            count = MythFilter.countWords(capped)
+        }
+        val warning = "DNA $name dipangkas dari $fullWords ke $count kata " +
+            "supaya dunia, aksi, dan cahaya muat dalam $maxWords kata."
+        return capped to warning
+    }
+
+    // Subject line dengan DNA dianggarkan (v1.2.1): DNA utama dulu, sisa
+    // anggaran untuk karakter kedua. Kalau tidak ada sisa, karakter kedua
+    // tetap disebut namanya tanpa deskripsi.
+    private fun budgetedSubjectLine(
+        input: ShotInput,
+        dnaAllowed: Int,
+        maxWords: Int
+    ): Pair<String, String?> {
+        val warnings = mutableListOf<String>()
+        val main = input.character
+        var remaining = dnaAllowed
+        val mainText = if (main == null) {
+            "a person"
+        } else {
+            val (capped, warning) = capDnaAtSentence(
+                main.descriptionEn.trim(), remaining, main.name, maxWords
+            )
+            if (warning != null) warnings.add(warning)
+            remaining -= MythFilter.countWords(capped)
+            "${main.name}, $capped"
+        }
+        val secondText = input.secondCharacter?.let { second ->
+            val (capped, warning) = capDnaAtSentence(
+                second.descriptionEn.trim(), remaining.coerceAtLeast(0), second.name, maxWords
+            )
+            if (warning != null) warnings.add(warning)
+            if (capped.isBlank()) ", facing ${second.name}" else ", facing ${second.name}, $capped"
+        } ?: ""
+        val warning = if (warnings.isEmpty()) null else warnings.joinToString(" ")
+        return (mainText + secondText) to warning
+    }
+
     private fun shortDna(input: ShotInput): String {
         val dna = input.character?.descriptionEn ?: ""
         val words = dna.split(Regex("\\s+")).take(12).joinToString(" ")
@@ -207,7 +273,8 @@ object PromptEngine {
         raw: String,
         negative: String?,
         input: ShotInput,
-        protectedTail: String? = null
+        protectedTail: String? = null,
+        extraWarnings: List<String> = emptyList()
     ): GeneratedPrompt {
         val filtered = MythFilter.filterMyths(raw)
         val trimmed = if (protectedTail != null && filtered.endsWith(protectedTail)) {
@@ -219,7 +286,22 @@ object PromptEngine {
             MythFilter.trimToWords(filtered, engine.maxWords)
         }
         val warnings = warningsFor(input).toMutableList()
-        val count = MythFilter.countWords(trimmed)
+        warnings.addAll(extraWarnings)
+        // Laporan trim v1.2.1 — tidak ada lagi pemotongan diam-diam (bug Riko):
+        // kalau trim membuang kalimat, user diberitahu kalimat apa yang hilang.
+        val beforeCount = MythFilter.countWords(filtered)
+        val afterCount = MythFilter.countWords(trimmed)
+        if (afterCount < beforeCount) {
+            val dropped = filtered.split(Regex("(?<=[.!])\\s+"))
+                .filter { sentence -> !trimmed.contains(sentence) }
+                .map { it.split(Regex("\\s+")).take(6).joinToString(" ") }
+            val detail = if (dropped.isEmpty()) "" else " Yang hilang: ${dropped.joinToString("; ")}…"
+            warnings.add(
+                "Prompt dipangkas dari $beforeCount ke $afterCount kata supaya muat dalam ${engine.maxWords} kata.$detail " +
+                "Periksa dunia, aksi, dan audio — pendekkan DNA atau dunia kalau sering terjadi."
+            )
+        }
+        val count = afterCount
         if (count < engine.minWords) {
             warnings.add(
                 "Prompt hanya $count kata (target ${engine.minWords}-${engine.maxWords}). " +
@@ -254,9 +336,28 @@ object PromptEngine {
             ""
         }
         val continuity = continuityPhrase(input)
+        // Anggaran DNA v1.2.1 (bug Riko): hitung kata di luar DNA dulu, sisa
+        // anggaran untuk DNA. Lantai 25 kata menjaga 1-2 kalimat pertama DNA
+        // (ciri wajah paling penting) tetap ada; kalau dunia/aksi juga
+        // kepanjangan, laporan trim di finish() yang memberi tahu user.
+        val s1WithoutDna =
+            "$shot, $angle, $lens, ${look.first}. ${input.character?.name ?: "a person"}, in ${worldText(input)}, $camera, lit with $light.$hide"
+        val otherWords = MythFilter.countWords(
+            listOf(
+                s1WithoutDna,
+                "[00:00-00:05] $poseStart, $action begins.",
+                "$material.",
+                "[00:05-00:10] The action completes as $poseEnd. ${look.second}, ${look.third}.",
+                "Audio: $audio.${dialogueFlow(input)}",
+                continuity,
+                FLOW_POSITIVE_LOCK
+            ).joinToString(" ")
+        )
+        val dnaAllowed = (TargetEngine.FLOW.maxWords - otherWords).coerceAtLeast(25)
+        val subject = budgetedSubjectLine(input, dnaAllowed, TargetEngine.FLOW.maxWords)
         val sentences = listOf(
             Sentence(
-                "$shot, $angle, $lens, ${look.first}. ${subjectLine(input)} in ${worldText(input)}, $camera, lit with $light.$hide",
+                "$shot, $angle, $lens, ${look.first}. ${subject.first} in ${worldText(input)}, $camera, lit with $light.$hide",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -286,7 +387,10 @@ object PromptEngine {
             emptyList()
         }
         val raw = assembleOrdered(sentences, FLOW_POSITIVE_LOCK, TargetEngine.FLOW.maxWords)
-        return finish(TargetEngine.FLOW, raw, null, input, FLOW_POSITIVE_LOCK)
+        return finish(
+            TargetEngine.FLOW, raw, null, input, FLOW_POSITIVE_LOCK,
+            extraWarnings = listOfNotNull(subject.second)
+        )
     }
 
     // WanGP TI2V-5B — gambar first-frame sudah mengunci subjek dan scene,
