@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PromptKu" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/promptku_teal</item>
-        <item name="colorPrimaryDark">@color/promptku_teal_dark</item>
-        <item name="colorAccent">@color/promptku_orange</item>
+    <!-- Pola yang TERBUKTI di UnduhKu/SuaraKu: parent platform, tanpa
+         dependensi library. Theme.Material3.DayNight.NoActionBar itu tema
+         View dari com.google.android.material:material — library itu TIDAK
+         ADA di build.gradle ini (yang ada cuma androidx.compose.material3,
+         itu Compose, bukan View). Tanpa library-nya, AAPT gagal linking
+         (processDebugResources FAILED). Warna dipegang Compose PromptKuTheme,
+         bukan tema XML ini — jadi item colorPrimary/dkk dihapus. -->
+    <style name="Theme.PromptKu" parent="android:Theme.Material.NoActionBar">
     </style>
 </resources>
