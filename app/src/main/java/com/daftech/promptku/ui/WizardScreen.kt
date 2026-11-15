@@ -1,10 +1,14 @@
-package com.daftech.promptku.ui
-
 @file:OptIn(ExperimentalLayoutApi::class)
 // Opt-in FILE-LEVEL: FlowRow dipakai di DUA composable file ini
-// (chip genre di baris ~57 dan chip engine hasil di baris ~400).
-// @OptIn di satu fungsi (dulu cuma di baris 47) TIDAK menular ke
-// fungsi lain — makanya compileDebugKotlin merah di baris 400.
+// (chip genre dan chip engine hasil). @OptIn di satu fungsi (dulu
+// cuma di baris 47) TIDAK menular ke fungsi lain — makanya
+// compileDebugKotlin merah di baris 400.
+// PENTING: anotasi @file: WAJIB di atas deklarasi package. Kalau
+// ditaruh di bawah package, kompiler nolak import sesudahnya
+// ("imports are only allowed in the beginning of file") — itu yang
+// bikin fix2 merah di kaptGenerateStubsDebugKotlin.
+package com.daftech.promptku.ui
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
