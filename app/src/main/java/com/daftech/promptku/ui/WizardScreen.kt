@@ -59,7 +59,8 @@ fun ChipRow(
     label: String,
     options: List<String>,
     selected: String?,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    enabled: Boolean = true
 ) {
     Text(text = label, style = MaterialTheme.typography.titleSmall)
     Spacer(modifier = Modifier.height(4.dp))
@@ -72,7 +73,8 @@ fun ChipRow(
             FilterChip(
                 selected = selected == option,
                 onClick = { onSelect(index) },
-                label = { Text(option) }
+                label = { Text(option) },
+                enabled = enabled
             )
         }
     }
@@ -113,6 +115,32 @@ fun WizardScreen(
             text = "Jawab 5 langkah. Input Bahasa Indonesia, prompt jadi Bahasa Inggris.",
             style = MaterialTheme.typography.bodyMedium
         )
+        // Banner Global Lock v1.1: field yang dikunci proyek tidak bisa diubah
+        // di wizard — generate menegakkan lock.
+        val activeLock = viewModel.activeLock
+        if (viewModel.activeProjectId != null && activeLock != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Global Lock aktif: ${activeLock.summaryId()}",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "Field yang dikunci tidak bisa diubah di sini — ubah di layar Proyek.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(onClick = { viewModel.exitProjectMode() }) {
+                        Text("Keluar dari mode proyek")
+                    }
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
         LinearProgressIndicator(
             progress = { (step + 1) / 5f },
@@ -148,7 +176,8 @@ fun WizardScreen(
                     label = "Gaya visual",
                     options = VisualStyle.values().map { it.labelId },
                     selected = input.style?.labelId,
-                    onSelect = { index -> viewModel.updateStyle(VisualStyle.values()[index]) }
+                    onSelect = { index -> viewModel.updateStyle(VisualStyle.values()[index]) },
+                    enabled = activeLock?.style == null
                 )
                 Text(
                     text = "Gaya menentukan tampilan + grade warna yang dikunci di semua scene.",
@@ -166,7 +195,8 @@ fun WizardScreen(
                     onSelect = { index ->
                         val item = viewModel.dnaCharacters[index]
                         viewModel.updateCharacter(CharacterDna(item.name, item.descriptionEn))
-                    }
+                    },
+                    enabled = activeLock?.character == null
                 )
                 OutlinedTextField(
                     value = input.character?.descriptionEn ?: "",
@@ -176,7 +206,8 @@ fun WizardScreen(
                     },
                     label = { Text("Deskripsi karakter (Inggris, verbatim)") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+                    minLines = 2,
+                    enabled = activeLock?.character == null
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(text = "Tokoh kedua (opsional)", style = MaterialTheme.typography.titleSmall)
@@ -188,9 +219,13 @@ fun WizardScreen(
                     onSelect = { index ->
                         val item = viewModel.dnaCharacters[index]
                         viewModel.updateSecondCharacter(CharacterDna(item.name, item.descriptionEn))
-                    }
+                    },
+                    enabled = activeLock?.secondCharacter == null
                 )
-                TextButton(onClick = { viewModel.updateSecondCharacter(null) }) {
+                TextButton(
+                    onClick = { viewModel.updateSecondCharacter(null) },
+                    enabled = activeLock?.secondCharacter == null
+                ) {
                     Text("Hapus tokoh kedua")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -204,7 +239,8 @@ fun WizardScreen(
                     onSelect = { index ->
                         val item = viewModel.dnaWorlds[index]
                         viewModel.updateWorld(WorldLock(item.name, item.descriptionEn))
-                    }
+                    },
+                    enabled = activeLock?.world == null
                 )
                 OutlinedTextField(
                     value = input.world?.descriptionEn ?: "",
@@ -214,7 +250,8 @@ fun WizardScreen(
                     },
                     label = { Text("Deskripsi dunia (Inggris)") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+                    minLines = 2,
+                    enabled = activeLock?.world == null
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -241,7 +278,8 @@ fun WizardScreen(
                     selected = input.lensMm?.let { "${it}mm" },
                     onSelect = { index ->
                         viewModel.updateLens(listOf(24, 35, 50, 85)[index])
-                    }
+                    },
+                    enabled = activeLock?.lensMm == null
                 )
                 ChipRow(
                     label = "Gerakan kamera (pilih 1)",
@@ -253,7 +291,8 @@ fun WizardScreen(
                     label = "Cahaya",
                     options = LightKind.values().map { it.labelId },
                     selected = input.light?.labelId,
-                    onSelect = { index -> viewModel.updateLight(LightKind.values()[index]) }
+                    onSelect = { index -> viewModel.updateLight(LightKind.values()[index]) },
+                    enabled = activeLock?.light == null
                 )
                 ChipRow(
                     label = "Fokus: wajah ATAU tangan",

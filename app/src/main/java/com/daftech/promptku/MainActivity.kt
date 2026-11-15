@@ -102,7 +102,10 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
                         }
                     }
                 )
-                2 -> ProjectScreen(viewModel = viewModel)
+                2 -> ProjectScreen(
+                    viewModel = viewModel,
+                    onGoToWizard = { tab = 0 }
+                )
                 3 -> DnaScreen(viewModel = viewModel)
                 4 -> HistoryScreen(viewModel = viewModel)
             }

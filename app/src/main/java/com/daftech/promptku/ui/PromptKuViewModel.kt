@@ -11,6 +11,8 @@ import com.daftech.promptku.data.HistoryItem
 import com.daftech.promptku.data.ProjectItem
 import com.daftech.promptku.data.PromptKuDatabase
 import com.daftech.promptku.data.SceneItem
+import com.daftech.promptku.data.toGlobalLock
+import com.daftech.promptku.data.withLock
 import com.daftech.promptku.engine.CameraAngle
 import com.daftech.promptku.engine.CameraMove
 import com.daftech.promptku.engine.CharacterDna
@@ -19,6 +21,7 @@ import com.daftech.promptku.engine.FocusMode
 import com.daftech.promptku.engine.GalleryTemplate
 import com.daftech.promptku.engine.GeneratedPrompt
 import com.daftech.promptku.engine.Genre
+import com.daftech.promptku.engine.GlobalLock
 import com.daftech.promptku.engine.HideTactic
 import com.daftech.promptku.engine.LightKind
 import com.daftech.promptku.engine.PromptEngine
@@ -30,6 +33,7 @@ import com.daftech.promptku.engine.TargetEngine
 import com.daftech.promptku.engine.Templates
 import com.daftech.promptku.engine.VisualStyle
 import com.daftech.promptku.engine.WorldLock
+import com.daftech.promptku.engine.continuityPoseStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +76,14 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         private set
 
     var projectScenes by mutableStateOf<Map<Long, List<SceneItem>>>(emptyMap())
+        private set
+
+    // Mode proyek v1.1: kalau tidak null, wizard sedang merakit scene
+    // untuk proyek ini dan Global Lock-nya ditegakkan saat generate.
+    var activeProjectId by mutableStateOf<Long?>(null)
+        private set
+
+    var activeLock by mutableStateOf<GlobalLock?>(null)
         private set
 
     var statusMessage by mutableStateOf("")
@@ -239,9 +251,61 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         generatedAll = emptyList()
         resultEngineIndex = 0
         score = null
+        activeProjectId = null
+        activeLock = null
+    }
+
+    // Masuk mode proyek: wizard dimulai dari Global Lock proyek + pose awal
+    // mengikuti pose akhir scene terakhir. Dipanggil dari layar Proyek.
+    fun startProjectScene(projectId: Long, onReady: () -> Unit) {
+        viewModelScope.launch {
+            val project = withContext(Dispatchers.IO) {
+                db.projectDao().allProjects().firstOrNull { it.id == projectId }
+            } ?: return@launch
+            val scenes = withContext(Dispatchers.IO) { db.projectDao().scenesOf(projectId) }
+            val lock = project.toGlobalLock()
+            val lastPoseEnd = scenes.maxByOrNull { it.orderIndex }?.poseEnd ?: ""
+            activeProjectId = projectId
+            activeLock = if (lock.isEmpty()) null else lock
+            input = lock.applyTo(ShotInput()).copy(
+                poseStart = continuityPoseStart(lastPoseEnd)
+            )
+            wizardStep = 0
+            generatedAll = emptyList()
+            resultEngineIndex = 0
+            score = null
+            statusMessage = "Mode proyek: ${project.title} — Global Lock aktif."
+            onReady()
+        }
+    }
+
+    fun exitProjectMode() {
+        activeProjectId = null
+        activeLock = null
+        statusMessage = "Keluar dari mode proyek."
+    }
+
+    fun updateProjectLock(projectId: Long, lock: GlobalLock) {
+        viewModelScope.launch {
+            val project = withContext(Dispatchers.IO) {
+                db.projectDao().allProjects().firstOrNull { it.id == projectId }
+            } ?: return@launch
+            withContext(Dispatchers.IO) {
+                db.projectDao().updateProject(project.withLock(lock))
+            }
+            if (activeProjectId == projectId) {
+                activeLock = if (lock.isEmpty()) null else lock
+                input = lock.applyTo(input)
+            }
+            refreshAll()
+            statusMessage = "Global Lock disimpan."
+        }
     }
 
     fun generate() {
+        if (activeLock != null) {
+            input = activeLock!!.applyTo(input)
+        }
         val current = input
         generatedAll = PromptEngine.buildAll(current)
         resultEngineIndex = when (current.engine) {
@@ -361,7 +425,9 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                         engine = prompt.engine.labelId,
                         promptText = prompt.text,
                         negativeText = prompt.negativePrompt ?: "",
-                        createdAt = System.currentTimeMillis()
+                        createdAt = System.currentTimeMillis(),
+                        poseStart = input.poseStart,
+                        poseEnd = input.poseEnd
                     )
                 )
             }

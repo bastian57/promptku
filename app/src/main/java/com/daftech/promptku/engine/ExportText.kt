@@ -6,12 +6,22 @@ object ExportText {
 
     fun buildProjectText(
         projectTitle: String,
-        scenes: List<Pair<String, GeneratedPrompt>>
+        scenes: List<Pair<String, GeneratedPrompt>>,
+        lock: GlobalLock = GlobalLock()
     ): String {
         val out = StringBuilder()
         out.append("PROMPTKU - $projectTitle\n")
-        out.append("Dibuat dengan PromptKu v1.0.0 (offline, struktur 9 lapis v2)\n")
+        out.append("Dibuat dengan PromptKu v1.1.0 (offline, struktur 9 lapis v2)\n")
         out.append("Total scene: ${scenes.size}\n")
+        if (!lock.isEmpty()) {
+            out.append("GLOBAL LOCK (berlaku untuk semua scene):\n")
+            lock.world?.let { out.append("- Dunia: ${it.name} — ${it.descriptionEn}\n") }
+            lock.light?.let { out.append("- Cahaya: ${it.labelId}\n") }
+            lock.style?.let { out.append("- Gaya: ${it.labelId}\n") }
+            lock.lensMm?.let { out.append("- Lensa: ${it}mm\n") }
+            lock.character?.let { out.append("- Tokoh: ${it.name} — ${it.descriptionEn}\n") }
+            lock.secondCharacter?.let { out.append("- Tokoh 2: ${it.name} — ${it.descriptionEn}\n") }
+        }
         out.append("========================================\n\n")
         scenes.forEachIndexed { index, pair ->
             val title = pair.first

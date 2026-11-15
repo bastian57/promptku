@@ -114,6 +114,48 @@ data class WorldLock(
     val descriptionEn: String
 )
 
+// Global Lock proyek (v1.1): field yang dikunci di tingkat proyek,
+// ditempel verbatim ke SEMUA scene. Field null = tidak dikunci.
+// World + Light + Style (membawa grade warna) + Lens = Global Lock v2.
+data class GlobalLock(
+    val world: WorldLock? = null,
+    val light: LightKind? = null,
+    val style: VisualStyle? = null,
+    val lensMm: Int? = null,
+    val character: CharacterDna? = null,
+    val secondCharacter: CharacterDna? = null
+) {
+    fun isEmpty(): Boolean =
+        world == null && light == null && style == null && lensMm == null &&
+            character == null && secondCharacter == null
+
+    // Lock menang atas input scene; field yang tidak dikunci dibiarkan apa adanya.
+    fun applyTo(input: ShotInput): ShotInput {
+        return input.copy(
+            world = world ?: input.world,
+            light = light ?: input.light,
+            style = style ?: input.style,
+            lensMm = lensMm ?: input.lensMm,
+            character = character ?: input.character,
+            secondCharacter = secondCharacter ?: input.secondCharacter
+        )
+    }
+
+    fun summaryId(): String {
+        val parts = mutableListOf<String>()
+        world?.let { parts.add("Dunia: ${it.name}") }
+        light?.let { parts.add("Cahaya: ${it.labelId}") }
+        style?.let { parts.add("Gaya: ${it.labelId}") }
+        lensMm?.let { parts.add("Lensa: ${it}mm") }
+        character?.let { parts.add("Tokoh: ${it.name}") }
+        secondCharacter?.let { parts.add("Tokoh 2: ${it.name}") }
+        return if (parts.isEmpty()) "Belum dikunci" else parts.joinToString(" | ")
+    }
+}
+
+// Kontinuitas pose: pose akhir scene sebelumnya jadi pose awal scene berikut.
+fun continuityPoseStart(lastPoseEnd: String): String = lastPoseEnd.trim()
+
 // Satu kartu shot — input wizard 5 langkah.
 data class ShotInput(
     val title: String = "",
