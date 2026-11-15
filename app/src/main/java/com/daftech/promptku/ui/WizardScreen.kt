@@ -89,7 +89,8 @@ fun ChipRow(
 @Composable
 fun WizardScreen(
     viewModel: PromptKuViewModel,
-    onGoToTemplates: () -> Unit
+    onGoToTemplates: () -> Unit,
+    onGoToQuick: (() -> Unit)? = null
 ) {
     val input = viewModel.input
     val step = viewModel.wizardStep
@@ -113,13 +114,19 @@ fun WizardScreen(
             .padding(16.dp)
     ) {
         Text(
-            text = "Wizard Sutradara",
+            text = "Wizard Sutradara — Mode Detail",
             style = MaterialTheme.typography.headlineSmall
         )
         Text(
             text = "Jawab 5 langkah. Input Bahasa Indonesia, prompt jadi Bahasa Inggris.",
             style = MaterialTheme.typography.bodyMedium
         )
+        if (onGoToQuick != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(onClick = onGoToQuick, modifier = Modifier.fillMaxWidth()) {
+                Text("Mode Cepat (1 kalimat jadi film)")
+            }
+        }
         // Banner Global Lock v1.1: field yang dikunci proyek tidak bisa diubah
         // di wizard — generate menegakkan lock.
         val activeLock = viewModel.activeLock

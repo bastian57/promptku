@@ -119,7 +119,11 @@ data class ScriptInput(
     val engine: TargetEngine = TargetEngine.FLOW,
     // v1.3 — bahasa dialog default naskah (ID/EN) + kartu 3 jangkar tokoh.
     val dialogueLang: DialogueLang = DialogueLang.EN,
-    val characterCard: CharacterCard? = null
+    val characterCard: CharacterCard? = null,
+    // v1.4 — Ambience Lock dari Mode Cepat (in-memory; tidak disimpan ke
+    // ScriptItem — saat naskah dimuat ulang dari DB, ambience kembali
+    // kosong dan user bisa isi lewat Ambience Lock proyek).
+    val ambienceEn: String = ""
 ) {
     fun isReady(): Boolean = synopsis.trim().split(Regex("\\s+")).size >= 10
 }
@@ -687,7 +691,14 @@ object ScriptEngine {
             axisSide = scene.axisSide,
             transition = scene.transition
         )
-        return lock?.applyTo(base) ?: base
+        // v1.4 — ambience dari Mode Cepat (ScriptInput) ditempel dulu,
+        // lalu Global Lock proyek menimpa/menambah di atasnya.
+        val withAmbience = if (input.ambienceEn.isNotBlank()) {
+            GlobalLock(ambience = input.ambienceEn).applyTo(base)
+        } else {
+            base
+        }
+        return lock?.applyTo(withAmbience) ?: withAmbience
     }
 }
 

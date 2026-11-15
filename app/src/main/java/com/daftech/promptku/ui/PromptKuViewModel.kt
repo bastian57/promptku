@@ -45,6 +45,7 @@ import com.daftech.promptku.engine.ScriptInput
 import com.daftech.promptku.engine.ScriptScore
 import com.daftech.promptku.engine.ShotInput
 import com.daftech.promptku.engine.ShotSize
+import com.daftech.promptku.engine.StoryInfer
 import com.daftech.promptku.engine.TargetEngine
 import com.daftech.promptku.engine.Templates
 import com.daftech.promptku.engine.VisualStyle
@@ -558,6 +559,101 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         scriptScore = null
         activeScriptId = null
         clearScriptPreview()
+    }
+
+    // ---------- Mode Cepat v1.4 ("Satu Kalimat Jadi Film") ----------
+    // 3 field saja; StoryInfer menebak genre/dunia/gaya/ambience dari
+    // 1 kalimat. Tebakan tampil sebagai chip yang bisa diubah SEBELUM build.
+    var quickSentence by mutableStateOf("")
+        private set
+
+    var quickHeroName by mutableStateOf("")
+        private set
+
+    var quickMinutes by mutableStateOf(1)
+        private set
+
+    var quickInference by mutableStateOf<StoryInfer.Inference?>(null)
+        private set
+
+    var quickWorldName by mutableStateOf("")
+        private set
+
+    var quickWorldDescEn by mutableStateOf("")
+        private set
+
+    var quickAmbience by mutableStateOf("")
+        private set
+
+    fun updateQuickSentence(value: String) {
+        quickSentence = value
+    }
+
+    fun updateQuickHeroName(value: String) {
+        quickHeroName = value
+    }
+
+    fun updateQuickMinutes(minutes: Int) {
+        quickMinutes = minutes.coerceIn(1, 10)
+    }
+
+    fun useQuickExample(sentence: String) {
+        quickSentence = sentence
+        inferQuick()
+    }
+
+    fun inferQuick() {
+        if (quickSentence.isBlank()) {
+            statusMessage = "Tulis dulu 1 kalimat ceritanya."
+            return
+        }
+        val inference = StoryInfer.infer(quickSentence)
+        quickInference = inference
+        quickWorldName = inference.worldName
+        quickWorldDescEn = inference.worldDescEn
+        quickAmbience = inference.ambienceEn
+    }
+
+    fun updateQuickGenre(genre: Genre) {
+        val current = quickInference ?: return
+        quickInference = current.copy(
+            genre = genre,
+            style = StoryInfer.styleForGenre(genre),
+            ambienceEn = StoryInfer.ambienceForGenre(genre)
+        )
+        quickAmbience = quickInference!!.ambienceEn
+    }
+
+    fun updateQuickStyle(style: VisualStyle) {
+        quickInference = quickInference?.copy(style = style)
+    }
+
+    fun updateQuickWorld(name: String, descEn: String) {
+        quickWorldName = name
+        quickWorldDescEn = descEn
+    }
+
+    fun updateQuickAmbience(value: String) {
+        quickAmbience = value
+    }
+
+    // 1 kalimat -> ScriptInput -> mesin naskah flat v1.3. Syarat sama
+    // seperti wizard naskah: sinopsis minimal 10 kata.
+    fun buildQuickFilm() {
+        if (quickSentence.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size < 10) {
+            statusMessage = "Kalimatnya minimal 10 kata dulu — contoh di bawah bisa diketuk."
+            return
+        }
+        val base = quickInference ?: StoryInfer.infer(quickSentence)
+        val inference = base.copy(
+            worldName = quickWorldName.ifBlank { base.worldName },
+            worldDescEn = quickWorldDescEn.ifBlank { base.worldDescEn },
+            ambienceEn = quickAmbience.ifBlank { base.ambienceEn }
+        )
+        scriptInput = StoryInfer.toScriptInput(
+            quickSentence, quickHeroName, quickMinutes, inference
+        ).copy(ambienceEn = inference.ambienceEn)
+        buildScript()
     }
 
     private fun draftFromItems(

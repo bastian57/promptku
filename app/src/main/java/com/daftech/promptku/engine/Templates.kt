@@ -1,8 +1,10 @@
 package com.daftech.promptku.engine
 
-// Galeri Template v1.0.1 — 14 template siap pakai, semua ditulis orisinal
-// mengikuti pola struktur v2 (bukan salinan prompt kurator).
-// Setiap template mengisi SEMUA field wizard, jadi skornya 10/10.
+// Galeri Template v1.4.0 — 33 template siap pakai (14 v1.0.1 + 19 v1.4.0),
+// semua ditulis orisinal mengikuti pola struktur v2 (bukan salinan prompt
+// kurator). Setiap template mengisi SEMUA field wizard, jadi skornya 10/10.
+// Keluarga Superhuman Fight (3) = pola studi kasus Bejo 15 Nov 2026:
+// beat per 2 detik + efek fisik + kamera orbit + klimaks di akhir.
 data class GalleryTemplate(
     val id: String,
     val titleId: String,
@@ -490,6 +492,621 @@ object Templates {
                 dialogueLine = "The city looks kind tonight.",
                 focusMode = FocusMode.FACE_ONLY,
                 hideTactic = HideTactic.BACK_SHOT
+            )
+        ),
+        // v1.4.0 — Keluarga Superhuman Fight (pola Bejo, 15 Nov 2026):
+        // beat per 2 detik + efek fisik + kamera orbit + klimaks di akhir.
+        GalleryTemplate(
+            id = "superhuman-duel-langit",
+            titleId = "Superhuman — Duel di Langit",
+            noteId = "Pola Bejo: 1v1 aerial, beat 2 detik, shockwave tiap impact, orbit, klimaks kepalan tangan. Tanpa kata mitos.",
+            input = ShotInput(
+                title = "Duel di Langit",
+                genre = Genre.ACTION,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Bejo",
+                    "a 1.8-meter-tall Indonesian man, short black hair, calm focused face, plain dark t-shirt, worn jeans, bare knuckles"
+                ),
+                secondCharacter = CharacterDna(
+                    "Raksasa",
+                    "a 2.8-meter-tall superhuman, broad shoulders, torn dark armor, heavy boots, cold eyes"
+                ),
+                world = WorldLock(
+                    "Langit kota",
+                    "high above a metropolitan city at noon, between glass skyscrapers, thin clouds, sunlight cutting through the towers"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.ORBIT,
+                light = LightKind.VOLUMETRIC,
+                actionEn = "pursues his foe through thin clouds with a speed burst, lands a powerful right cross that sends a ring-shaped shockwave outward, then chains a left hook, right body punch and uppercut as the camera orbits around them, catches a kick, spins and lands a devastating spinning back kick, then hovers still, fist clenched, air compressing around his knuckles before a final maximum-power straight punch",
+                poseStart = "flying fast after his foe, fist pulled back",
+                poseEnd = "hovering still, right fist clenched forward",
+                materialEn = "dust and concrete fragments drift outward in a ring, clothes ripple from the pressure, windows tremble",
+                audioEn = "rushing wind, deep impact booms, glass trembling, distant city hum",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "superhuman-melawan-raksasa",
+            titleId = "Superhuman — Melawan Raksasa",
+            noteId = "Underdog vs raksasa 2,8 m: menghindar sentimeter demi sentimeter, lalu membalik tempo.",
+            input = ShotInput(
+                title = "Melawan Raksasa",
+                genre = Genre.ACTION,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Bejo",
+                    "a small determined fighter, 1.7 meters tall, torn jacket, wrapped fists, bruised cheek, defiant eyes"
+                ),
+                secondCharacter = CharacterDna(
+                    "Raksasa Batu",
+                    "a 2.8-meter-tall giant, massive arms, cracked stone skin, heavy iron boots, slow cold stare"
+                ),
+                world = WorldLock(
+                    "Alun-alun hancur",
+                    "a ruined city square at dusk, toppled pillars, cracked ground, smoke rising, fires glowing far away"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.LOW,
+                lensMm = 24,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "dodges a massive falling fist by a few centimeters, rolls under the giant's arm, climbs onto its back and strikes the neck three times fast, then leaps off as the giant stumbles forward and crashes into a pillar that shatters around them",
+                poseStart = "standing small before the giant, fists raised",
+                poseEnd = "landing in a crouch as the pillar collapses behind him",
+                materialEn = "stone dust explodes from the pillar, cracks spread across the ground, debris rains down slowly",
+                audioEn = "deep footsteps, stone cracking, heavy breathing, distant rumble",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "superhuman-amukan-jalanan",
+            titleId = "Superhuman — Amukan di Jalanan",
+            noteId = "Superhuman brawl level jalanan: neon, hujan, aspal basah, mobil jadi properti.",
+            input = ShotInput(
+                title = "Amukan di Jalanan",
+                genre = Genre.ACTION,
+                style = VisualStyle.CYBERPUNK,
+                engine = TargetEngine.KLING,
+                character = CharacterDna(
+                    "Srikandi",
+                    "a young woman with a shaved head, glowing tattoos, black combat gear, bare feet on wet asphalt"
+                ),
+                world = WorldLock(
+                    "Jalan neon",
+                    "a neon-lit street at night, rain-slicked surfaces, holographic signs, steam vents, parked cars"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.LOW,
+                lensMm = 35,
+                cameraMove = CameraMove.TRACKING,
+                light = LightKind.NEON,
+                actionEn = "sprints down the wet street, vaults over a car hood, lands a double-palm impact that throws two attackers backward, spins low and sweeps the third off his feet, then stops and cracks her knuckles as rain steams off her glowing tattoos",
+                poseStart = "running low between parked cars, rain on her face",
+                poseEnd = "standing still in the rain, knuckles cracked, breathing steady",
+                materialEn = "rain sprays from the asphalt, neon reflections streak past, steam rises from the vents",
+                audioEn = "rain, footsteps, impacts, distant hover traffic, synth hum",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "drama-pulang-kampung",
+            titleId = "Drama — Pulang Kampung",
+            noteId = "Drama keluarga: satu senyum setelah perjalanan panjang, tanpa dialog.",
+            input = ShotInput(
+                title = "Pulang Kampung",
+                genre = Genre.DRAMA,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Budi",
+                    "a man in his thirties, worn backpack, batik shirt, tired hopeful eyes"
+                ),
+                world = WorldLock(
+                    "Jalan desa",
+                    "a village road at dawn, rice fields on both sides, mist, a small wooden house in the distance"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.TRACKING,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "walks slowly down the road, stops, then smiles as an old woman waves from the doorway",
+                poseStart = "walking with a heavy backpack, head bowed",
+                poseEnd = "standing still, smiling, arms opening",
+                materialEn = "mist drifts over the rice fields, dust rises from his shoes",
+                audioEn = "roosters, soft wind, distant prayer call",
+                dialogueName = "Budi",
+                dialogueLine = "I am home, Ibu.",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.BACK_SHOT
+            )
+        ),
+        GalleryTemplate(
+            id = "drama-surat-terakhir",
+            titleId = "Drama — Surat Terakhir",
+            noteId = "Drama diam: surat dibaca dua kali, lalu dipeluk. Lilin = cahaya bernama.",
+            input = ShotInput(
+                title = "Surat Terakhir",
+                genre = Genre.DRAMA,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Ibu",
+                    "an old woman with grey hair in a bun, faded kebaya, reading glasses, trembling hands"
+                ),
+                world = WorldLock(
+                    "Ruang tamu",
+                    "a quiet living room at night, one warm lamp, old photographs on the wall, rain on the window"
+                ),
+                shotSize = ShotSize.MEDIUM_CLOSEUP,
+                angle = CameraAngle.EYE,
+                lensMm = 85,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.CANDLE,
+                actionEn = "opens the letter slowly, reads it twice, then presses it to her chest with closed eyes",
+                poseStart = "sitting by the lamp, letter unopened on her lap",
+                poseEnd = "holding the letter to her chest, eyes closed",
+                materialEn = "lamplight flickers on the photographs, rain slides down the window",
+                audioEn = "rain, paper rustling, a soft sigh, distant thunder",
+                dialogueName = "Ibu",
+                dialogueLine = "You kept your promise.",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.SMOKE_FOREGROUND
+            )
+        ),
+        GalleryTemplate(
+            id = "romansa-hujan-pertama",
+            titleId = "Romansa — Hujan Pertama",
+            noteId = "Romansa: satu payung kecil, dua orang, bahu bersentuhan.",
+            input = ShotInput(
+                title = "Hujan Pertama",
+                genre = Genre.ROMANSA,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.KLING,
+                character = CharacterDna(
+                    "Nadia",
+                    "a young woman with wet hair, yellow raincoat, shy smile"
+                ),
+                secondCharacter = CharacterDna(
+                    "Raka",
+                    "a young man holding a small umbrella, wet shirt, nervous grin"
+                ),
+                world = WorldLock(
+                    "Halte hujan",
+                    "a bus stop in light rain at dusk, wet benches, city lights blurring behind"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 50,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.REMBRANDT,
+                actionEn = "steps closer under the small umbrella and their shoulders touch",
+                poseStart = "standing apart under the shelter, rain falling",
+                poseEnd = "standing close under one umbrella, smiling",
+                materialEn = "raindrops slide off the raincoat, puddles ripple at their feet",
+                audioEn = "soft rain, distant traffic, a bus passing",
+                dialogueName = "Nadia",
+                dialogueLine = "You are soaked too.",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.BACK_SHOT
+            )
+        ),
+        GalleryTemplate(
+            id = "horor-kuntilanak-kebun",
+            titleId = "Horor — Kuntilanak di Kebun",
+            noteId = "Horor lokal: kebun pisang, kabut, bulan — jangan tunjuk wajahnya, siluet saja.",
+            input = ShotInput(
+                title = "Kuntilanak di Kebun",
+                genre = Genre.HOROR,
+                style = VisualStyle.NOIR,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Joko",
+                    "a young man with a flashlight, pale face, trembling hands, wet shirt"
+                ),
+                world = WorldLock(
+                    "Kebun pisang",
+                    "a banana grove at midnight, thick mist, moonlight between the leaves, an old well"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.LOW,
+                lensMm = 35,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.MOONLIGHT,
+                actionEn = "freezes as a white figure sways between the banana trees, then slowly steps backward",
+                poseStart = "walking between the trees, flashlight beam shaking",
+                poseEnd = "stepping backward, breath held, eyes wide",
+                materialEn = "mist curls around the banana leaves, a white cloth drifts in the wind",
+                audioEn = "crickets, a baby crying far away, leaves rustling",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.SILHOUETTE
+            )
+        ),
+        GalleryTemplate(
+            id = "horor-pocong-gang",
+            titleId = "Horor — Pocong di Gang",
+            noteId = "WanGP: prompt pendek, gerakan + kamera saja. Satu ketukan takut.",
+            input = ShotInput(
+                title = "Pocong di Gang",
+                genre = Genre.HOROR,
+                style = VisualStyle.NOIR,
+                engine = TargetEngine.WAN,
+                character = CharacterDna(
+                    "Andi",
+                    "a teenage boy with a bicycle, school uniform, frightened eyes"
+                ),
+                world = WorldLock(
+                    "Gang desa",
+                    "a narrow village alley at night, one flickering lamp, closed doors, wet stone"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.HIGH,
+                lensMm = 35,
+                cameraMove = CameraMove.STATIC,
+                light = LightKind.CHIAROSCURO,
+                actionEn = "drops his bicycle and runs as a wrapped figure hops after him down the alley",
+                poseStart = "riding slowly, looking over his shoulder",
+                poseEnd = "running away, bicycle left behind",
+                materialEn = "the lamp flickers, shadows jump on the walls, dust rises from the stone",
+                audioEn = "silence, then fast footsteps, a bicycle bell ringing alone",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "scifi-kontak-pertama",
+            titleId = "Sci-Fi — Kontak Pertama",
+            noteId = "Seedance: timeline 3 segmen, tanpa negative prompt. Cahaya turun = klimaks.",
+            input = ShotInput(
+                title = "Kontak Pertama",
+                genre = Genre.SCI_FI,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.SEEDANCE,
+                character = CharacterDna(
+                    "Dr. Lestari",
+                    "a young scientist in a white coat, short curly hair, wide curious eyes"
+                ),
+                world = WorldLock(
+                    "Observatorium",
+                    "a rooftop observatory at night, a huge telescope, stars above, city lights below"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 50,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.MOONLIGHT,
+                actionEn = "looks up from the telescope screen as a bright light descends slowly from the sky",
+                poseStart = "bent over the screen, hand on the dial",
+                poseEnd = "standing straight, face lit by the descending light",
+                materialEn = "dust drifts in the starlight, papers flutter on the desk",
+                audioEn = "low hum, soft beeps, wind on the rooftop",
+                dialogueName = "Dr. Lestari",
+                dialogueLine = "It is answering us.",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.SILHOUETTE
+            )
+        ),
+        GalleryTemplate(
+            id = "fantasi-naga-awan",
+            titleId = "Fantasi — Naga di Atas Awan",
+            noteId = "Anime: extreme wide supaya naga + puncak + awan masuk satu frame.",
+            input = ShotInput(
+                title = "Naga di Atas Awan",
+                genre = Genre.FANTASI,
+                style = VisualStyle.ANIME,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Sari",
+                    "a young girl with braided hair, red cloak, wooden sword on her back, brave eyes"
+                ),
+                world = WorldLock(
+                    "Puncak gunung",
+                    "a mountain peak above the clouds at sunrise, stone steps, prayer flags, a dragon circling"
+                ),
+                shotSize = ShotSize.EXTREME_WIDE,
+                angle = CameraAngle.LOW,
+                lensMm = 24,
+                cameraMove = CameraMove.CRANE_UP,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "raises her wooden sword as the great dragon circles down toward her",
+                poseStart = "climbing the last stone steps, cloak in the wind",
+                poseEnd = "standing tall, sword raised to the sky",
+                materialEn = "clouds part around the peak, prayer flags snap in the wind",
+                audioEn = "wind, distant roar, flapping wings",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "fantasi-penyihir-muda",
+            titleId = "Fantasi — Penyihir Muda",
+            noteId = "Kling: fokus tangan — lilin melayang mengelilingi, wajah stabil.",
+            input = ShotInput(
+                title = "Penyihir Muda",
+                genre = Genre.FANTASI,
+                style = VisualStyle.ANIME,
+                engine = TargetEngine.KLING,
+                character = CharacterDna(
+                    "Bimo",
+                    "a teenage wizard with round glasses, oversized purple robe, messy black hair"
+                ),
+                world = WorldLock(
+                    "Perpustakaan tersembunyi",
+                    "a hidden library at night, floating candles, tall shelves, dust in the air"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.TRACKING,
+                light = LightKind.CANDLE,
+                actionEn = "waves his wand and a dozen candles rise into the air around him",
+                poseStart = "standing between the shelves, wand lowered",
+                poseEnd = "arms spread, candles floating in a ring",
+                materialEn = "dust sparkles in the candlelight, pages flutter on their own",
+                audioEn = "soft chimes, paper rustling, a low magical hum",
+                focusMode = FocusMode.HANDS_ONLY,
+                hideTactic = HideTactic.SMOKE_FOREGROUND
+            )
+        ),
+        GalleryTemplate(
+            id = "thriller-mata-mata",
+            titleId = "Thriller — Mata-mata",
+            noteId = "Noir: amplop + tempat sampah + pergi tanpa menoleh. Paranoia tanpa dialog.",
+            input = ShotInput(
+                title = "Mata-mata",
+                genre = Genre.THRILLER,
+                style = VisualStyle.NOIR,
+                engine = TargetEngine.KLING,
+                character = CharacterDna(
+                    "Sinta",
+                    "a woman in a black coat, sunglasses at night, red lipstick, calm cold eyes"
+                ),
+                world = WorldLock(
+                    "Stasiun tengah malam",
+                    "a train station at midnight, empty platforms, fluorescent light, fog outside"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 50,
+                cameraMove = CameraMove.TRACKING,
+                light = LightKind.CHIAROSCURO,
+                actionEn = "slips a small envelope into the trash bin and walks away without looking back",
+                poseStart = "standing by the bin, glancing at the clock",
+                poseEnd = "walking down the platform, coat trailing",
+                materialEn = "fog drifts across the platform, a newspaper page slides along the floor",
+                audioEn = "distant train, footsteps, a loudspeaker announcement",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.BACK_SHOT
+            )
+        ),
+        GalleryTemplate(
+            id = "thriller-penculikan",
+            titleId = "Thriller — Penculikan",
+            noteId = "Close-up + neon: satu kalimat dialog, sisanya wajah yang tegang.",
+            input = ShotInput(
+                title = "Penculikan",
+                genre = Genre.THRILLER,
+                style = VisualStyle.NOIR,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Andi",
+                    "a father in a grey suit, sweat on his forehead, phone pressed to his ear, shaking hands"
+                ),
+                world = WorldLock(
+                    "Telepon umum",
+                    "a phone booth on a rainy street at night, neon reflections, passing headlights"
+                ),
+                shotSize = ShotSize.CLOSEUP,
+                angle = CameraAngle.EYE,
+                lensMm = 85,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.NEON,
+                actionEn = "listens in silence, then whispers one word and hangs up",
+                poseStart = "standing in the booth, phone ringing",
+                poseEnd = "phone down, staring at the rain, jaw tight",
+                materialEn = "rain streaks the glass, neon light flickers on his face",
+                audioEn = "rain, phone dial tone, a car passing fast",
+                dialogueName = "Andi",
+                dialogueLine = "How much?",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.SILHOUETTE
+            )
+        ),
+        GalleryTemplate(
+            id = "komedi-ojek-nyasar",
+            titleId = "Komedi — Tukang Ojek Nyasar",
+            noteId = "WanGP: komedi fisik satu ketukan, kamera diam supaya leluconnya kebaca.",
+            input = ShotInput(
+                title = "Tukang Ojek Nyasar",
+                genre = Genre.KOMEDI,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.WAN,
+                character = CharacterDna(
+                    "Mang Udin",
+                    "a cheerful ojek driver with a green jacket, helmet under his arm, big moustache"
+                ),
+                world = WorldLock(
+                    "Perempatan siang",
+                    "a busy intersection at noon, honking cars, street vendors, harsh sunlight"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.STATIC,
+                light = LightKind.OVERCAST,
+                actionEn = "looks at his phone, scratches his head, then turns his motorcycle around in the middle of traffic",
+                poseStart = "parked at the corner, phone in hand, confused",
+                poseEnd = "riding off the wrong way, grinning and waving",
+                materialEn = "exhaust smoke puffs behind him, a vendor's umbrella wobbles",
+                audioEn = "honking, laughter, street chatter, a dangling bell",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "komedi-mertua-datang",
+            titleId = "Komedi — Mertua Datang",
+            noteId = "Komedi situasi: wajan gosong disembunyikan di belakang punggung.",
+            input = ShotInput(
+                title = "Mertua Datang",
+                genre = Genre.KOMEDI,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Dedi",
+                    "a nervous young husband in an apron, holding a burnt pan, flour on his cheek"
+                ),
+                world = WorldLock(
+                    "Dapur pagi",
+                    "a small kitchen in the morning, steam, messy counters, sunlight through the window"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.STATIC,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "hides the burnt pan behind his back as the doorbell rings",
+                poseStart = "standing at the stove, pan smoking",
+                poseEnd = "smiling at the door, pan hidden behind his back",
+                materialEn = "steam curls from the pan, flour dusts the counter",
+                audioEn = "doorbell, sizzling, nervous laughter",
+                dialogueName = "Dedi",
+                dialogueLine = "Ibu! Come in, the food is... almost ready.",
+                focusMode = FocusMode.FACE_ONLY,
+                hideTactic = HideTactic.BACK_SHOT
+            )
+        ),
+        GalleryTemplate(
+            id = "dokumenter-pagi-pasar",
+            titleId = "Dokumenter — Pagi di Pasar",
+            noteId = "Seedance: observasional, tangan yang bekerja, tanpa drama buatan.",
+            input = ShotInput(
+                title = "Pagi di Pasar",
+                genre = Genre.DOKUMENTER,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.SEEDANCE,
+                character = CharacterDna(
+                    "Bu Minah",
+                    "an old vegetable seller with a headscarf, wrinkled hands, warm tired smile"
+                ),
+                world = WorldLock(
+                    "Pasar tradisional",
+                    "a traditional market at dawn, colorful stalls, steam from food carts, morning mist"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.TRACKING,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "arranges the vegetables in neat rows and calls out to the first buyers",
+                poseStart = "unloading baskets from a cart, back bent",
+                poseEnd = "standing behind the stall, hands on hips, smiling",
+                materialEn = "mist drifts between the stalls, water drips from fresh leaves",
+                audioEn = "market chatter, chopping, a rooster far away",
+                focusMode = FocusMode.HANDS_ONLY,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "dokumenter-panen-raya",
+            titleId = "Dokumenter — Panen Raya",
+            noteId = "Aerial: barisan pemanen + sawah emas + gunung di kejauhan.",
+            input = ShotInput(
+                title = "Panen Raya",
+                genre = Genre.DOKUMENTER,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Pak Slamet",
+                    "a farmer with a straw hat, sun-darkened skin, strong arms, white teeth smile"
+                ),
+                world = WorldLock(
+                    "Sawah emas",
+                    "a golden rice field at noon, workers in a line, mountains far away"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.HIGH,
+                lensMm = 35,
+                cameraMove = CameraMove.AERIAL,
+                light = LightKind.OVERCAST,
+                actionEn = "swings the sickle in rhythm and tosses the cut stalks onto the pile",
+                poseStart = "standing in the field, sickle raised",
+                poseEnd = "wiping sweat, looking at the full pile with pride",
+                materialEn = "golden dust floats in the air, cut stalks fall in neat rows",
+                audioEn = "sickle swishes, laughter, wind through the rice",
+                focusMode = FocusMode.HANDS_ONLY,
+                hideTactic = HideTactic.DISTANCE
+            )
+        ),
+        GalleryTemplate(
+            id = "sejarah-diponegoro",
+            titleId = "Sejarah — Diponegoro",
+            noteId = "Vintage: kabut terbelah, keris terangkat, pasukan bangkit.",
+            input = ShotInput(
+                title = "Diponegoro",
+                genre = Genre.SEJARAH,
+                style = VisualStyle.VINTAGE,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Pangeran Diponegoro",
+                    "a Javanese prince in white robes, turban, calm fierce eyes, a keris at his waist"
+                ),
+                world = WorldLock(
+                    "Medan perang",
+                    "a battlefield at dawn, mist over the field, banners, distant mountains"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.LOW,
+                lensMm = 35,
+                cameraMove = CameraMove.CRANE_UP,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "raises his keris toward the sky as his soldiers rise from the mist behind him",
+                poseStart = "kneeling in prayer, head bowed",
+                poseEnd = "standing tall, keris raised, army behind him",
+                materialEn = "mist parts around the soldiers, banners snap in the wind",
+                audioEn = "distant drums, horse hooves, wind",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.SILHOUETTE
+            )
+        ),
+        GalleryTemplate(
+            id = "sejarah-perang-puputan",
+            titleId = "Sejarah — Perang Puputan",
+            noteId = "Kling: gamelan berhenti, tombak ditanam, kepala tertunduk.",
+            input = ShotInput(
+                title = "Perang Puputan",
+                genre = Genre.SEJARAH,
+                style = VisualStyle.VINTAGE,
+                engine = TargetEngine.KLING,
+                character = CharacterDna(
+                    "I Gusti Ngurah",
+                    "a Balinese warrior in white cloth, gold headband, spear in hand, solemn face"
+                ),
+                world = WorldLock(
+                    "Halaman istana",
+                    "a palace courtyard at sunrise, stone walls, frangipani trees, smoke in the distance"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.LOW,
+                lensMm = 35,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "plants the spear in the ground and bows his head as the gamelan stops",
+                poseStart = "walking slowly into the courtyard, spear upright",
+                poseEnd = "kneeling by the planted spear, head bowed",
+                materialEn = "frangipani petals drift down, incense smoke curls upward",
+                audioEn = "gamelan fading, birdsong, a single drum beat",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.SILHOUETTE
             )
         )
     )

@@ -16,7 +16,7 @@ object FountainExport {
         out.append("Credit: Written by\n")
         out.append("Author: PromptKu\n")
         out.append("Draft date: 2026-11-15\n")
-        out.append("Contact: Mode Naskah PromptKu v1.3 (rule-based draft)\n")
+        out.append("Contact: Mode Naskah PromptKu v1.4 (rule-based draft)\n")
         out.append("\n")
         out.append("FADE IN:\n\n")
         draft.scenes.forEach { scene ->
@@ -47,7 +47,7 @@ object FountainExport {
         val input = draft.input
         val out = StringBuilder()
         out.append("PROMPTKU - ${input.title.ifBlank { "Tanpa Judul" }}\n")
-        out.append("Dibuat dengan PromptKu v1.3.0 (Mode Naskah, offline, rule-based draft)\n")
+        out.append("Dibuat dengan PromptKu v1.4.0 (Mode Naskah, offline, rule-based draft)\n")
         out.append("Genre: ${input.genre.labelId} | Durasi: ${input.durationMinutes} menit | ")
         out.append("Total klip: ${draft.totalClips} | ${draft.estimatedCostId}\n")
         if (input.synopsis.isNotBlank()) {

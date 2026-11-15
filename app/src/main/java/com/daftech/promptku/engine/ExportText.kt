@@ -11,7 +11,7 @@ object ExportText {
     ): String {
         val out = StringBuilder()
         out.append("PROMPTKU - $projectTitle\n")
-        out.append("Dibuat dengan PromptKu v1.3.0 (offline, struktur v3 — 12 slot)\n")
+        out.append("Dibuat dengan PromptKu v1.4.0 (offline, struktur v3 — 12 slot)\n")
         out.append("Total scene: ${scenes.size}\n")
         if (!lock.isEmpty()) {
             out.append("GLOBAL LOCK (berlaku untuk semua scene):\n")

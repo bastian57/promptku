@@ -32,6 +32,7 @@ import com.daftech.promptku.ui.HistoryScreen
 import com.daftech.promptku.ui.ProjectScreen
 import com.daftech.promptku.ui.PromptKuTheme
 import com.daftech.promptku.ui.PromptKuViewModel
+import com.daftech.promptku.ui.QuickScreen
 import com.daftech.promptku.ui.ScriptScreen
 import com.daftech.promptku.ui.TemplateScreen
 import com.daftech.promptku.ui.WizardScreen
@@ -53,6 +54,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PromptKuApp(viewModel: PromptKuViewModel) {
     var tab by remember { mutableIntStateOf(0) }
+    // Mode Cepat v1.4 = layar pertama tab Buat; false = wizard Mode Detail.
+    var quickMode by remember { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
     val statusMessage = viewModel.statusMessage
 
@@ -92,22 +95,35 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
             modifier = Modifier.padding(padding)
         ) {
             when (tab) {
-                0 -> WizardScreen(
-                    viewModel = viewModel,
-                    onGoToTemplates = { tab = 1 }
-                )
+                0 -> if (quickMode) {
+                    QuickScreen(
+                        viewModel = viewModel,
+                        onGoToDetail = { quickMode = false },
+                        onGoToScript = { tab = 3 }
+                    )
+                } else {
+                    WizardScreen(
+                        viewModel = viewModel,
+                        onGoToTemplates = { tab = 1 },
+                        onGoToQuick = { quickMode = true }
+                    )
+                }
                 1 -> TemplateScreen(
                     onUseTemplate = { id ->
                         val template = Templates.all.firstOrNull { it.id == id }
                         if (template != null) {
                             viewModel.applyTemplate(template)
+                            quickMode = false
                             tab = 0
                         }
                     }
                 )
                 2 -> ProjectScreen(
                     viewModel = viewModel,
-                    onGoToWizard = { tab = 0 }
+                    onGoToWizard = {
+                        quickMode = false
+                        tab = 0
+                    }
                 )
                 3 -> ScriptScreen(
                     viewModel = viewModel,
