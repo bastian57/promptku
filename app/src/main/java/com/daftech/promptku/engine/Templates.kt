@@ -1,6 +1,6 @@
 package com.daftech.promptku.engine
 
-// Galeri Template v1 — 13 template siap pakai, semua ditulis orisinal
+// Galeri Template v1.0.1 — 14 template siap pakai, semua ditulis orisinal
 // mengikuti pola struktur v2 (bukan salinan prompt kurator).
 // Setiap template mengisi SEMUA field wizard, jadi skornya 10/10.
 data class GalleryTemplate(
@@ -61,8 +61,51 @@ object Templates {
         )
     }
 
+    // v1.0.1: template dari video referensi DBZ 8:49 (bedah 15 Nov 2026).
+    // BEDA dari goku-vs-cell-01: itu arena Cell Games; ini KOTA HANCUR
+    // pasca-apokaliptik + Piccolo sebagai hero. Bar metal + logo di
+    // atas-bawah video itu kerjaan edit (CapCut), BUKAN prompt — jangan
+    // pernah ditulis di prompt. Nama berlisensi bisa ditolak Flow.
+    fun dbzKotaHancur(): GalleryTemplate {
+        return GalleryTemplate(
+            id = "dbz-kota-hancur",
+            titleId = "DBZ — Kota Hancur (Referensi Video)",
+            noteId = "Dari video referensi 8:49: kota hancur + golden hour + grade teal-orange. Bar metal atas-bawah itu kerjaan edit (CapCut), bukan prompt. Nama berlisensi bisa ditolak Flow — ganti jadi the green warrior / the bio-android villain kalau ditolak.",
+            input = ShotInput(
+                title = "Kota Hancur — Piccolo vs Cell",
+                genre = Genre.ACTION,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Piccolo",
+                    "tall green-skinned Namekian warrior, pointed ears, two antennae, " +
+                        "white turban and cape over a purple gi, weighted training clothes, calm fierce eyes"
+                ),
+                secondCharacter = cellDna,
+                world = WorldLock(
+                    "Kota hancur",
+                    "a ruined post-apocalyptic city at golden hour, collapsed skyscrapers, " +
+                        "cracked streets, drifting smoke, fires glowing in the distance"
+                ),
+                shotSize = ShotSize.WIDE,
+                angle = CameraAngle.LOW,
+                lensMm = 35,
+                cameraMove = CameraMove.DOLLY_IN,
+                light = LightKind.GOLDEN_HOUR,
+                actionEn = "stands with his back to camera among the ruins, then turns slowly and faces Cell across the rubble",
+                poseStart = "standing with his back to camera, cape moving in the wind",
+                poseEnd = "facing Cell, fists clenched, aura rising",
+                materialEn = "dust drifts through golden light, smoke curls from cracked streets, a spiral aura rises around him",
+                audioEn = "deserted city wind, distant rumble, low orchestral drone",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.BACK_SHOT
+            )
+        )
+    }
+
     val all: List<GalleryTemplate> = listOf(
         gokuVsCell(),
+        dbzKotaHancur(),
         GalleryTemplate(
             id = "drama-hujan-jakarta",
             titleId = "Drama — Hujan di Jakarta",
