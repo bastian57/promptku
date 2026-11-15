@@ -7,6 +7,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Movie
@@ -31,6 +32,7 @@ import com.daftech.promptku.ui.HistoryScreen
 import com.daftech.promptku.ui.ProjectScreen
 import com.daftech.promptku.ui.PromptKuTheme
 import com.daftech.promptku.ui.PromptKuViewModel
+import com.daftech.promptku.ui.ScriptScreen
 import com.daftech.promptku.ui.TemplateScreen
 import com.daftech.promptku.ui.WizardScreen
 
@@ -61,11 +63,12 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
         }
     }
 
-    val tabs = listOf("Buat", "Template", "Proyek", "DNA", "Riwayat")
+    val tabs = listOf("Buat", "Template", "Proyek", "Naskah", "DNA", "Riwayat")
     val icons = listOf(
         Icons.Filled.Create,
         Icons.Filled.Movie,
         Icons.Filled.Folder,
+        Icons.Filled.Description,
         Icons.Filled.Person,
         Icons.Filled.History
     )
@@ -106,8 +109,12 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
                     viewModel = viewModel,
                     onGoToWizard = { tab = 0 }
                 )
-                3 -> DnaScreen(viewModel = viewModel)
-                4 -> HistoryScreen(viewModel = viewModel)
+                3 -> ScriptScreen(
+                    viewModel = viewModel,
+                    onGoToProjects = { tab = 2 }
+                )
+                4 -> DnaScreen(viewModel = viewModel)
+                5 -> HistoryScreen(viewModel = viewModel)
             }
         }
     }

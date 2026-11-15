@@ -70,4 +70,94 @@ object PromptScore {
         )
         return ScoreResult(items, items.count { it.passed })
     }
+
+    // Prompt Score v3 (v1.2) — 8 aturan multi-scene, dipakai Mode Naskah
+    // untuk menilai tiap shot DENGAN konteks shot sebelumnya (prev).
+    // Tanpa prev, aturan perbandingan lolos (tidak ada yang dibandingkan).
+    // sameScene = true bila prev shot masih satu scene dengan input:
+    // shot-shot dalam satu scene MEMANG coverage dari SATU aksi yang sama,
+    // jadi aturan "aksi tidak mengulang" tidak berlaku di situ — aturan
+    // itu hanya untuk aksi yang sama di scene BERBEDA.
+    fun scoreV3(input: ShotInput, prev: ShotInput? = null, sameScene: Boolean = false): ScoreResult {
+        val dialogueWords = input.dialogueLine.split(Regex("\\s+"))
+            .filter { it.isNotBlank() }.size
+        val fastActionWords = listOf(
+            "runs", "sprints", "charges", "leaps", "dodges", "crashes",
+            "flees", "races", "dashes"
+        )
+        val fastCamera = setOf(
+            CameraMove.TRACKING, CameraMove.HANDHELD,
+            CameraMove.ORBIT, CameraMove.AERIAL
+        )
+        val actionLower = input.actionEn.lowercase()
+        val wanEstimate = if (input.engine == TargetEngine.WAN) {
+            MythFilter.countWords(
+                listOf(
+                    input.actionEn, input.materialEn, input.audioEn,
+                    input.dialogueLine,
+                    input.character?.descriptionEn ?: "",
+                    input.world?.descriptionEn ?: ""
+                ).joinToString(" ")
+            )
+        } else {
+            0
+        }
+        val items = listOf(
+            ScoreItem(
+                id = "dialogue_speed",
+                labelId = "Dialog <=2,5 kata/detik klip",
+                passed = dialogueWords <= 25,
+                missingHint = "Dialog maksimal 25 kata per klip 10 detik — lebih dari itu lip-sync dan pacing pecah."
+            ),
+            ScoreItem(
+                id = "single_action",
+                labelId = "Satu aksi, bukan dua",
+                passed = !actionLower.contains(" and then ") &&
+                    !actionLower.contains(", then ") &&
+                    !actionLower.contains(" while "),
+                missingHint = "Aksi mengandung dua langkah ('and then' / 'while') — pecah jadi dua shot."
+            ),
+            ScoreItem(
+                id = "fast_action_camera",
+                labelId = "Aksi cepat + kamera cepat tidak bersamaan",
+                passed = !(fastActionWords.any { actionLower.contains(it) } &&
+                    input.cameraMove in fastCamera),
+                missingHint = "Aksi cepat (lari/lompat) + kamera cepat (tracking/handheld) = motion blur dan gagal render."
+            ),
+            ScoreItem(
+                id = "shot_size_varies",
+                labelId = "Ukuran shot beda dari shot sebelumnya",
+                passed = prev == null || prev.shotSize != input.shotSize,
+                missingHint = "Dua shot berurutan ukuran sama melanggar aturan 30 derajat — variasikan (wide -> close -> insert)."
+            ),
+            ScoreItem(
+                id = "screen_direction",
+                labelId = "Arah layar konsisten dengan shot sebelumnya",
+                passed = prev == null ||
+                    prev.screenDirection.isBlank() ||
+                    input.screenDirection.isBlank() ||
+                    prev.screenDirection == input.screenDirection,
+                missingHint = "Arah layar berubah tanpa alasan — tokoh akan terlihat berlari ke arah berlawanan."
+            ),
+            ScoreItem(
+                id = "wan_word_guard",
+                labelId = "Wan: estimasi kata aman (<=100)",
+                passed = input.engine != TargetEngine.WAN || wanEstimate <= 100,
+                missingHint = "Prompt Wan mendekati batas 80-120 kata (encoder 512 token) — pendekkan deskripsi dunia/DNA."
+            ),
+            ScoreItem(
+                id = "light_source",
+                labelId = "Sumber cahaya eksplisit",
+                passed = input.light != null,
+                missingHint = "Tiap shot butuh satu sumber cahaya bernama — tanpa itu lighting berubah-ubah antar klip."
+            ),
+            ScoreItem(
+                id = "action_not_repeated",
+                labelId = "Aksi tidak mengulang scene sebelumnya",
+                passed = prev == null || sameScene || prev.actionEn.trim() != input.actionEn.trim(),
+                missingHint = "Aksi sama persis dengan scene sebelumnya — variasikan gerakannya."
+            )
+        )
+        return ScoreResult(items, items.count { it.passed })
+    }
 }

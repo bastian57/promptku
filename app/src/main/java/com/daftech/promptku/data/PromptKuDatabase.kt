@@ -14,9 +14,20 @@ import androidx.room.RoomDatabase
 import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.daftech.promptku.engine.CameraAngle
+import com.daftech.promptku.engine.CameraMove
 import com.daftech.promptku.engine.CharacterDna
+import com.daftech.promptku.engine.DraftScene
+import com.daftech.promptku.engine.DraftShot
+import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.GlobalLock
 import com.daftech.promptku.engine.LightKind
+import com.daftech.promptku.engine.ScriptEnding
+import com.daftech.promptku.engine.ScriptInput
+import com.daftech.promptku.engine.ShotFunction
+import com.daftech.promptku.engine.ShotPriority
+import com.daftech.promptku.engine.ShotSize
+import com.daftech.promptku.engine.TargetEngine
 import com.daftech.promptku.engine.VisualStyle
 import com.daftech.promptku.engine.WorldLock
 
@@ -117,6 +128,138 @@ interface DnaDao {
     suspend fun delete(item: DnaItem)
 }
 
+// Naskah v1.2 — 2 level: Scene dramatis -> Shot (1 klip = 1 prompt).
+// Status: DRAFT -> APPROVED (per sequence) -> GENERATED.
+@Entity(tableName = "scripts")
+data class ScriptItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val synopsis: String,
+    val genre: String,
+    val durationMinutes: Int,
+    val emotion: String,
+    val protagonistName: String,
+    val protagonistDescEn: String,
+    val antagonist: String,
+    val worldName: String,
+    val worldDescEn: String,
+    val conflict: String,
+    val ending: String,
+    val style: String,
+    val engine: String,
+    val status: String,
+    val createdAt: Long
+)
+
+@Entity(
+    tableName = "script_scenes",
+    foreignKeys = [ForeignKey(
+        entity = ScriptItem::class,
+        parentColumns = ["id"],
+        childColumns = ["scriptId"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class ScriptSceneItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val scriptId: Long,
+    val orderIndex: Int,
+    val sequenceIndex: Int,
+    val beatName: String,
+    val slugline: String,
+    val want: String,
+    val obstacle: String,
+    val actionEn: String,
+    val dialogueName: String,
+    val dialogueLine: String,
+    val poseStart: String,
+    val poseEnd: String,
+    val screenDirection: String,
+    val axisSide: String,
+    val approved: Boolean = false
+)
+
+@Entity(
+    tableName = "script_shots",
+    foreignKeys = [ForeignKey(
+        entity = ScriptItem::class,
+        parentColumns = ["id"],
+        childColumns = ["scriptId"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class ScriptShotItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val scriptId: Long,
+    val sceneOrder: Int,
+    val orderIndex: Int,
+    val shotSize: String,
+    val angle: String,
+    val lensMm: Int,
+    val cameraMove: String,
+    val light: String,
+    val actionEn: String,
+    val poseStart: String,
+    val poseEnd: String,
+    val screenDirection: String,
+    val axisSide: String,
+    val priority: String,
+    val shotFunction: String,
+    val transition: String,
+    val reAnchor: Boolean = false
+)
+
+@Dao
+interface ScriptDao {
+    @Insert
+    suspend fun insertScript(item: ScriptItem): Long
+
+    @Update
+    suspend fun updateScript(item: ScriptItem)
+
+    @Query("SELECT * FROM scripts ORDER BY createdAt DESC")
+    suspend fun allScripts(): List<ScriptItem>
+
+    @Delete
+    suspend fun deleteScript(item: ScriptItem)
+
+    @Insert
+    suspend fun insertScene(item: ScriptSceneItem): Long
+
+    @Insert
+    suspend fun insertScenes(items: List<ScriptSceneItem>)
+
+    @Update
+    suspend fun updateScene(item: ScriptSceneItem)
+
+    @Query("SELECT * FROM script_scenes WHERE scriptId = :scriptId ORDER BY orderIndex ASC")
+    suspend fun scenesOf(scriptId: Long): List<ScriptSceneItem>
+
+    @Delete
+    suspend fun deleteScene(item: ScriptSceneItem)
+
+    @Query("DELETE FROM script_scenes WHERE scriptId = :scriptId AND orderIndex = :orderIndex")
+    suspend fun deleteScenesOfSequence(scriptId: Long, orderIndex: Int)
+
+    @Insert
+    suspend fun insertShot(item: ScriptShotItem): Long
+
+    @Insert
+    suspend fun insertShots(items: List<ScriptShotItem>)
+
+    @Update
+    suspend fun updateShot(item: ScriptShotItem)
+
+    @Query("SELECT * FROM script_shots WHERE scriptId = :scriptId ORDER BY sceneOrder ASC, orderIndex ASC")
+    suspend fun shotsOf(scriptId: Long): List<ScriptShotItem>
+
+    @Delete
+    suspend fun deleteShot(item: ScriptShotItem)
+
+    @Query("DELETE FROM script_shots WHERE scriptId = :scriptId AND sceneOrder = :sceneOrder")
+    suspend fun deleteShotsOfScene(scriptId: Long, sceneOrder: Int)
+}
+
 @Dao
 interface ProjectDao {
     @Insert
@@ -199,15 +342,189 @@ fun ProjectItem.withLock(lock: GlobalLock): ProjectItem {
     )
 }
 
+// Migrasi v2 -> v3 (v1.2): tambah 3 tabel naskah (scripts, script_scenes,
+// script_shots). Tabel baru saja — database lama naik tanpa hapus data.
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `scripts` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, `synopsis` TEXT NOT NULL, " +
+                "`genre` TEXT NOT NULL, `durationMinutes` INTEGER NOT NULL, " +
+                "`emotion` TEXT NOT NULL, `protagonistName` TEXT NOT NULL, " +
+                "`protagonistDescEn` TEXT NOT NULL, `antagonist` TEXT NOT NULL, " +
+                "`worldName` TEXT NOT NULL, `worldDescEn` TEXT NOT NULL, " +
+                "`conflict` TEXT NOT NULL, `ending` TEXT NOT NULL, " +
+                "`style` TEXT NOT NULL, `engine` TEXT NOT NULL, " +
+                "`status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `script_scenes` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`scriptId` INTEGER NOT NULL, `orderIndex` INTEGER NOT NULL, " +
+                "`sequenceIndex` INTEGER NOT NULL, `beatName` TEXT NOT NULL, " +
+                "`slugline` TEXT NOT NULL, `want` TEXT NOT NULL, " +
+                "`obstacle` TEXT NOT NULL, `actionEn` TEXT NOT NULL, " +
+                "`dialogueName` TEXT NOT NULL, `dialogueLine` TEXT NOT NULL, " +
+                "`poseStart` TEXT NOT NULL, `poseEnd` TEXT NOT NULL, " +
+                "`screenDirection` TEXT NOT NULL, `axisSide` TEXT NOT NULL, " +
+                "`approved` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`scriptId`) REFERENCES `scripts`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `script_shots` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`scriptId` INTEGER NOT NULL, `sceneOrder` INTEGER NOT NULL, " +
+                "`orderIndex` INTEGER NOT NULL, `shotSize` TEXT NOT NULL, " +
+                "`angle` TEXT NOT NULL, `lensMm` INTEGER NOT NULL, " +
+                "`cameraMove` TEXT NOT NULL, `light` TEXT NOT NULL, " +
+                "`actionEn` TEXT NOT NULL, `poseStart` TEXT NOT NULL, " +
+                "`poseEnd` TEXT NOT NULL, `screenDirection` TEXT NOT NULL, " +
+                "`axisSide` TEXT NOT NULL, `priority` TEXT NOT NULL, " +
+                "`shotFunction` TEXT NOT NULL, `transition` TEXT NOT NULL, " +
+                "`reAnchor` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`scriptId`) REFERENCES `scripts`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE)"
+        )
+    }
+}
+
+// Konversi ScriptItem <-> ScriptInput (enum dibaca dengan runCatching).
+fun ScriptItem.toScriptInput(): ScriptInput {
+    return ScriptInput(
+        title = title,
+        synopsis = synopsis,
+        genre = runCatching { Genre.valueOf(genre) }.getOrDefault(Genre.ACTION),
+        durationMinutes = durationMinutes,
+        emotion = emotion,
+        protagonistName = protagonistName,
+        protagonistDescEn = protagonistDescEn,
+        antagonist = antagonist,
+        worldName = worldName,
+        worldDescEn = worldDescEn,
+        conflict = conflict,
+        ending = runCatching { ScriptEnding.valueOf(ending) }.getOrDefault(ScriptEnding.HAPPY),
+        style = runCatching { VisualStyle.valueOf(style) }.getOrDefault(VisualStyle.REALISTIC),
+        engine = runCatching { TargetEngine.valueOf(engine) }.getOrDefault(TargetEngine.FLOW)
+    )
+}
+
+fun ScriptInput.toScriptItem(status: String = "DRAFT"): ScriptItem {
+    return ScriptItem(
+        title = title,
+        synopsis = synopsis,
+        genre = genre.name,
+        durationMinutes = durationMinutes,
+        emotion = emotion,
+        protagonistName = protagonistName,
+        protagonistDescEn = protagonistDescEn,
+        antagonist = antagonist,
+        worldName = worldName,
+        worldDescEn = worldDescEn,
+        conflict = conflict,
+        ending = ending.name,
+        style = style.name,
+        engine = engine.name,
+        status = status,
+        createdAt = System.currentTimeMillis()
+    )
+}
+
+fun DraftScene.toScriptSceneItem(scriptId: Long): ScriptSceneItem {
+    return ScriptSceneItem(
+        scriptId = scriptId,
+        orderIndex = orderIndex,
+        sequenceIndex = sequenceIndex,
+        beatName = beatName,
+        slugline = slugline,
+        want = want,
+        obstacle = obstacle,
+        actionEn = actionEn,
+        dialogueName = dialogueName,
+        dialogueLine = dialogueLine,
+        poseStart = poseStart,
+        poseEnd = poseEnd,
+        screenDirection = screenDirection,
+        axisSide = axisSide,
+        approved = false
+    )
+}
+
+fun ScriptSceneItem.toDraftScene(): DraftScene {
+    return DraftScene(
+        sequenceIndex = sequenceIndex,
+        orderIndex = orderIndex,
+        beatName = beatName,
+        slugline = slugline,
+        want = want,
+        obstacle = obstacle,
+        actionEn = actionEn,
+        dialogueName = dialogueName,
+        dialogueLine = dialogueLine,
+        poseStart = poseStart,
+        poseEnd = poseEnd,
+        screenDirection = screenDirection,
+        axisSide = axisSide
+    )
+}
+
+fun DraftShot.toScriptShotItem(scriptId: Long): ScriptShotItem {
+    return ScriptShotItem(
+        scriptId = scriptId,
+        sceneOrder = sceneOrder,
+        orderIndex = orderIndex,
+        shotSize = shotSize.name,
+        angle = angle.name,
+        lensMm = lensMm,
+        cameraMove = cameraMove.name,
+        light = light.name,
+        actionEn = actionEn,
+        poseStart = poseStart,
+        poseEnd = poseEnd,
+        screenDirection = screenDirection,
+        axisSide = axisSide,
+        priority = priority.name,
+        shotFunction = shotFunction.name,
+        transition = transition,
+        reAnchor = reAnchor
+    )
+}
+
+fun ScriptShotItem.toDraftShot(): DraftShot {
+    return DraftShot(
+        sceneOrder = sceneOrder,
+        orderIndex = orderIndex,
+        shotSize = runCatching { ShotSize.valueOf(shotSize) }.getOrDefault(ShotSize.MEDIUM),
+        angle = runCatching { CameraAngle.valueOf(angle) }.getOrDefault(CameraAngle.EYE),
+        lensMm = lensMm,
+        cameraMove = runCatching { CameraMove.valueOf(cameraMove) }.getOrDefault(CameraMove.STATIC),
+        light = runCatching { LightKind.valueOf(light) }.getOrDefault(LightKind.GOLDEN_HOUR),
+        actionEn = actionEn,
+        poseStart = poseStart,
+        poseEnd = poseEnd,
+        screenDirection = screenDirection,
+        axisSide = axisSide,
+        priority = runCatching { ShotPriority.valueOf(priority) }.getOrDefault(ShotPriority.B),
+        shotFunction = runCatching { ShotFunction.valueOf(shotFunction) }.getOrDefault(ShotFunction.ACTION),
+        transition = transition,
+        reAnchor = reAnchor
+    )
+}
+
 @Database(
-    entities = [HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class],
-    version = 2,
+    entities = [
+        HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class,
+        ScriptItem::class, ScriptSceneItem::class, ScriptShotItem::class
+    ],
+    version = 3,
     exportSchema = false
 )
 abstract class PromptKuDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun dnaDao(): DnaDao
     abstract fun projectDao(): ProjectDao
+    abstract fun scriptDao(): ScriptDao
 
     companion object {
         @Volatile
@@ -219,7 +536,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
                     context.applicationContext,
                     PromptKuDatabase::class.java,
                     "promptku.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
         }
     }

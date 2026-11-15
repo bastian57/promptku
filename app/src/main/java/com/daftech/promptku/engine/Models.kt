@@ -178,7 +178,13 @@ data class ShotInput(
     val dialogueName: String = "",
     val dialogueLine: String = "",
     val focusMode: FocusMode? = null,
-    val hideTactic: HideTactic = HideTactic.NONE
+    val hideTactic: HideTactic = HideTactic.NONE,
+    // Kontinuitas multi-scene v1.2 (ENTRY/EXIT STATE): arah gerak tokoh di
+    // layar + sisi kamera terhadap garis aksi (aturan 180 derajat).
+    // Kosong = tidak disebut di prompt (wizard v1.0/v1.1 tidak berubah).
+    val screenDirection: String = "",
+    val axisSide: String = "",
+    val transition: String = ""
 )
 
 data class GeneratedPrompt(

@@ -182,6 +182,23 @@ object PromptEngine {
         return " $name (determined): \"${input.dialogueLine.trim()}\""
     }
 
+    // Frasa kontinuitas v1.2 — hanya muncul bila field terisi (Mode Naskah).
+    // Arah layar + sisi axis menjaga tokoh tidak berlari ke arah berlawanan
+    // antar klip (aturan 180 derajat); transisi menandai sambungan antar shot.
+    private fun continuityPhrase(input: ShotInput): String {
+        val parts = mutableListOf<String>()
+        if (input.screenDirection.isNotBlank()) {
+            parts.add("Screen direction: ${input.screenDirection.trim()}")
+        }
+        if (input.axisSide.isNotBlank()) {
+            parts.add("camera stays on the ${input.axisSide.trim()} side of the axis")
+        }
+        if (input.transition.isNotBlank()) {
+            parts.add("Transition: ${input.transition.trim()}")
+        }
+        return parts.joinToString(", ")
+    }
+
     // protectedTail: kalimat kunci (lock / constraints) yang TIDAK BOLEH
     // terpotong trim. Kalau teks kepanjangan, yang dipangkas hanya bagian
     // kepala — tail selalu dipertahankan utuh di akhir.
@@ -236,6 +253,7 @@ object PromptEngine {
         } else {
             ""
         }
+        val continuity = continuityPhrase(input)
         val sentences = listOf(
             Sentence(
                 "$shot, $angle, $lens, ${look.first}. ${subjectLine(input)} in ${worldText(input)}, $camera, lit with $light.$hide",
@@ -262,7 +280,11 @@ object PromptEngine {
                 mandatory = true,
                 dropPriority = 0
             )
-        )
+        ) + if (continuity.isNotBlank()) {
+            listOf(Sentence("$continuity.", mandatory = false, dropPriority = 4))
+        } else {
+            emptyList()
+        }
         val raw = assembleOrdered(sentences, FLOW_POSITIVE_LOCK, TargetEngine.FLOW.maxWords)
         return finish(TargetEngine.FLOW, raw, null, input, FLOW_POSITIVE_LOCK)
     }
@@ -282,6 +304,10 @@ object PromptEngine {
         raw.append("${shortDna(input)} in ${worldText(input)}. ")
         raw.append("$poseStart, then $action, ending $poseEnd. ")
         raw.append("$camera. Lit with $light. ${look.first}. ${look.second}.")
+        val continuity = continuityPhrase(input)
+        if (continuity.isNotBlank()) {
+            raw.append(" $continuity.")
+        }
         var text = MythFilter.filterMyths(raw.toString())
         if (MythFilter.countWords(text) < 80) {
             val extra = " ${input.materialEn.ifBlank { "Dust drifts slowly, debris settles, the ground stays cracked underfoot." }} " +
@@ -306,6 +332,7 @@ object PromptEngine {
         val material = input.materialEn.ifBlank { "dust drifts slowly through the air" }
         val audio = input.audioEn.ifBlank { "wind, quiet ambience" }
         val secondName = input.secondCharacter?.let { ", facing ${it.name}" } ?: ""
+        val continuity = continuityPhrase(input)
         val sentences = listOf(
             Sentence(
                 "${shortDna(input)}$secondName, in ${shortWorld(input)}.",
@@ -330,7 +357,11 @@ object PromptEngine {
                 mandatory = true,
                 dropPriority = 0
             )
-        )
+        ) + if (continuity.isNotBlank()) {
+            listOf(Sentence("$continuity.", mandatory = false, dropPriority = 4))
+        } else {
+            emptyList()
+        }
         val raw = assembleOrdered(sentences, POSITIVE_LOCK_SHORT, TargetEngine.KLING.maxWords)
         return finish(TargetEngine.KLING, raw, null, input, POSITIVE_LOCK_SHORT)
     }
@@ -375,7 +406,11 @@ object PromptEngine {
                 dropPriority = 0
             ),
             Sentence("$material.", mandatory = false, dropPriority = 3)
-        )
+        ) + if (continuityPhrase(input).isNotBlank()) {
+            listOf(Sentence("${continuityPhrase(input)}.", mandatory = false, dropPriority = 4))
+        } else {
+            emptyList()
+        }
         val raw = assembleOrdered(sentences, tail, TargetEngine.SEEDANCE.maxWords)
         return finish(TargetEngine.SEEDANCE, raw, null, input, tail)
     }
