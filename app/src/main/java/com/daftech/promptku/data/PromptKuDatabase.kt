@@ -95,7 +95,11 @@ data class SceneItem(
     val createdAt: Long,
     // Kontinuitas pose v1.1: pose akhir scene ini jadi pose awal scene berikut.
     val poseStart: String = "",
-    val poseEnd: String = ""
+    val poseEnd: String = "",
+    // v1.4.4 — naskah sumber scene ini (null = shot Wizard manual).
+    // Dipakai generate-replace: generate ulang naskah yang sama
+    // menghapus dulu scene lama milik naskah itu, bukan menumpuk.
+    val scriptId: Long? = null
 )
 
 @Dao
@@ -134,7 +138,7 @@ interface DnaDao {
 // Naskah v1.3 — FLAT: 1 scene = 1 klip 10 detik = 1 prompt.
 // Status: DRAFT -> APPROVED (per scene) -> GENERATED.
 // Tabel script_shots peninggalan v1.2 (model 2 tingkat) TIDAK lagi
-// dibaca app v1.3+ — datanya tetap ada di file DB, tidak dihapus.
+// dibaca app v1.3+ — DIHAPUS oleh MIGRATION_6_7 (v1.4.4).
 @Entity(tableName = "scripts")
 data class ScriptItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -230,6 +234,11 @@ interface ScriptDao {
     @Delete
     suspend fun deleteScript(item: ScriptItem)
 
+    // v1.4.4 — hapus naskah basi sekaligus (beserta scene naskahnya
+    // via FK CASCADE).
+    @Delete
+    suspend fun deleteScripts(items: List<ScriptItem>)
+
     @Insert
     suspend fun insertScene(item: ScriptSceneItem): Long
 
@@ -271,6 +280,18 @@ interface ProjectDao {
 
     @Delete
     suspend fun deleteScene(item: SceneItem)
+
+    // v1.4.4 — hapus scene proyek milik satu naskah (generate ulang =
+    // ganti, bukan tumpuk) + hapus scene dari naskah yang sudah
+    // dihapus (orphan) + hapus scene duplikat per id.
+    @Query("DELETE FROM scenes WHERE projectId = :projectId AND scriptId = :scriptId")
+    suspend fun deleteScenesOfScript(projectId: Long, scriptId: Long)
+
+    @Query("DELETE FROM scenes WHERE scriptId IN (:scriptIds)")
+    suspend fun deleteScenesOfScripts(scriptIds: List<Long>)
+
+    @Query("DELETE FROM scenes WHERE id IN (:ids)")
+    suspend fun deleteScenesByIds(ids: List<Long>)
 }
 
 // Migrasi v1 -> v2 (v1.1): tambah kolom Global Lock di projects dan
@@ -428,6 +449,24 @@ val MIGRATION_4_5: Migration = object : Migration(4, 5) {
 val MIGRATION_5_6: Migration = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE script_scenes ADD COLUMN effectId TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+// v1.4.4 — Room v6 -> v7: Bersihkan Sampah.
+// - scenes.scriptId (nullable): naskah sumber scene proyek.
+// - Dedup satu kali: tiap (projectId, judul) hanya baris terbaru
+//   (id terbesar) yang dipertahankan — membersihkan tumpukan hasil
+//   generate ulang (contoh lapangan: proyek Bejo 12 scene -> 6).
+// - DROP script_shots: tabel peninggalan v1.2, tidak dibaca app
+//   v1.3+ — buang dari file DB.
+val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE scenes ADD COLUMN scriptId INTEGER")
+        db.execSQL(
+            "DELETE FROM scenes WHERE id NOT IN " +
+                "(SELECT MAX(id) FROM scenes GROUP BY projectId, title)"
+        )
+        db.execSQL("DROP TABLE IF EXISTS script_shots")
     }
 }
 
@@ -589,7 +628,7 @@ fun ScriptSceneItem.toDraftScene(): DraftScene {
         HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class,
         ScriptItem::class, ScriptSceneItem::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class PromptKuDatabase : RoomDatabase() {
@@ -608,7 +647,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
                     context.applicationContext,
                     PromptKuDatabase::class.java,
                     "promptku.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { instance = it }
             }
         }
     }

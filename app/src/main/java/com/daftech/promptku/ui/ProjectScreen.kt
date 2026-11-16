@@ -67,6 +67,16 @@ fun ProjectScreen(viewModel: PromptKuViewModel, onGoToWizard: () -> Unit) {
         }) {
             Text("Buat Proyek")
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        // v1.4.4 — Bersihkan Sampah: hapus scene proyek duplikat +
+        // naskah lama bertitel sama. Dijalankan hanya saat diketuk.
+        OutlinedButton(onClick = {
+            viewModel.cleanupTrash { msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }) {
+            Text("Bersihkan Sampah")
+        }
         Spacer(modifier = Modifier.height(12.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(viewModel.projects) { project ->

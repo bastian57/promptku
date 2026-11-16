@@ -14,6 +14,7 @@ import com.daftech.promptku.data.PromptKuDatabase
 import com.daftech.promptku.data.SceneItem
 import com.daftech.promptku.data.ScriptItem
 import com.daftech.promptku.data.ScriptSceneItem
+import com.daftech.promptku.data.TrashCleanup
 import com.daftech.promptku.data.toDraftScene
 import com.daftech.promptku.data.toGlobalLock
 import com.daftech.promptku.data.toScriptInput
@@ -854,6 +855,14 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                 )
             }
             val lock = existing?.toGlobalLock() ?: GlobalLock()
+            // v1.4.4 — generate = GANTI, bukan tumpuk: hapus dulu scene
+            // proyek milik naskah ini (shot Wizard, scriptId null,
+            // tidak tersentuh), baru simpan generasi terbaru. Tanpa
+            // ini, generate ulang film yang sama menumpuk 6 scene lama
+            // + 6 scene baru di proyek yang sama (audit 16 Nov 14:24).
+            withContext(Dispatchers.IO) {
+                db.projectDao().deleteScenesOfScript(projectId, scriptId)
+            }
             val baseOrder = withContext(Dispatchers.IO) {
                 db.projectDao().scenesOf(projectId).size
             }
@@ -871,7 +880,8 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
                             negativeText = prompt.negativePrompt ?: "",
                             createdAt = System.currentTimeMillis(),
                             poseStart = scene.poseStart,
-                            poseEnd = scene.poseEnd
+                            poseEnd = scene.poseEnd,
+                            scriptId = scriptId
                         )
                     )
                 }
@@ -880,6 +890,34 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
             refreshAll()
             statusMessage = "${approvedScenes.size} prompt masuk ke proyek '${item.title}'."
             onReady(projectId)
+        }
+    }
+
+    // v1.4.4 — Bersihkan Sampah (tombol di tab Proyek, BUKAN otomatis):
+    // hapus scene proyek duplikat (judul sama, hanya terbaru yang
+    // dipertahankan) + naskah lama bertitel sama (hanya terbaru yang
+    // dipertahankan, beserta prompt proyek yatim milik naskah yang
+    // dihapus). Shot Wizard (scriptId null, judul unik) dan naskah
+    // bertitel unik tidak tersentuh. Dijalankan hanya atas perintah
+    // user — penghapusan diam-diam tiap refresh dilarang (draft v2
+    // film yang sama bisa ikut terhapus).
+    fun cleanupTrash(onDone: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            val allScenes = withContext(Dispatchers.IO) {
+                db.projectDao().allProjects().flatMap { db.projectDao().scenesOf(it.id) }
+            }
+            val dupIds = TrashCleanup.duplicateSceneIds(allScenes)
+            val staleScripts = withContext(Dispatchers.IO) {
+                TrashCleanup.supersededScripts(db.scriptDao().allScripts())
+            }
+            val staleIds = staleScripts.map { it.id }
+            withContext(Dispatchers.IO) {
+                if (dupIds.isNotEmpty()) db.projectDao().deleteScenesByIds(dupIds)
+                if (staleIds.isNotEmpty()) db.projectDao().deleteScenesOfScripts(staleIds)
+                if (staleScripts.isNotEmpty()) db.scriptDao().deleteScripts(staleScripts)
+            }
+            refreshAll()
+            onDone("Sampah dibersihkan: ${dupIds.size} scene duplikat, ${staleScripts.size} naskah lama dihapus.")
         }
     }
 
