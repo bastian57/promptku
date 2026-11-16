@@ -2,6 +2,7 @@ package com.daftech.promptku.data
 
 import androidx.room.Dao
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
@@ -23,7 +24,17 @@ data class V2BibleItem(
     val createdAt: Long
 )
 
-@Entity(tableName = "v2_scenes")
+@Entity(
+    tableName = "v2_scenes",
+    // v2.0 fix2 — index HARUS dideklarasikan di entity: Room memvalidasi
+    // skema SETELAH migrasi, dan index yang dibuat migrasi tapi tidak ada
+    // di entity = IllegalStateException ("Migration didn't properly
+    // handle") → app crash tiap buka. Nama index Room untuk Index("bibleId")
+    // = index_v2_scenes_bibleId, sama persis dengan CREATE INDEX di
+    // MIGRATION_7_8 — jadi install baru (Room bikin dari entity) dan
+    // upgrade (migrasi) konsisten.
+    indices = [Index("bibleId")]
+)
 data class V2SceneItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val bibleId: Long,
