@@ -1,6 +1,6 @@
 package com.daftech.promptku.engine
 
-// Galeri Template v1.4.0 — 33 template siap pakai (14 v1.0.1 + 19 v1.4.0),
+// Galeri Template v1.4.2 — 34 template siap pakai (14 v1.0.1 + 19 v1.4.0 + 1 v1.4.2),
 // semua ditulis orisinal mengikuti pola struktur v2 (bukan salinan prompt
 // kurator). Setiap template mengisi SEMUA field wizard, jadi skornya 10/10.
 // Keluarga Superhuman Fight (3) = pola studi kasus Bejo 15 Nov 2026:
@@ -105,9 +105,49 @@ object Templates {
         )
     }
 
+    // v1.4.2 — cerita kurir + chip (pool Action lama v1.0–v1.4.1) pindah
+    // ke sini sebagai TEMPLATE EKSPLISIT: hanya dipakai kalau user
+    // memilihnya di tab Template, atau kalau kalimat Mode Cepat memang
+    // tentang kurir/paket/chip (ScriptPools.isCourierStory). Bukan lagi
+    // default tersembunyi semua film Action.
+    fun kisahKurir(): GalleryTemplate {
+        return GalleryTemplate(
+            id = "kisah-kurir-01",
+            titleId = "Kisah Kurir — Paket Misterius",
+            noteId = "Template kisah kurir + chip (pool Action lama). Pilih ini kalau ceritamu memang tentang kurir — kalau tidak, pakai Mode Cepat dan biarkan efek yang menulis ceritanya.",
+            input = ShotInput(
+                title = "Kisah Kurir — Paket Misterius",
+                genre = Genre.ACTION,
+                style = VisualStyle.REALISTIC,
+                engine = TargetEngine.FLOW,
+                character = CharacterDna(
+                    "Raka",
+                    "a young courier in his twenties, lean build, worn jacket, tired eyes"
+                ),
+                world = WorldLock(
+                    "Kota Tua",
+                    "an old port city at dusk, crumbling warehouses, neon signs, rain-slicked streets"
+                ),
+                shotSize = ShotSize.MEDIUM,
+                angle = CameraAngle.EYE,
+                lensMm = 35,
+                cameraMove = CameraMove.TRACKING,
+                light = LightKind.NEON,
+                actionEn = "opens the package and finds a glowing chip inside",
+                poseStart = "standing at the door, package in hand",
+                poseEnd = "staring at the glowing chip, hands shaking",
+                materialEn = "rain on the wet street, neon reflections in puddles",
+                audioEn = "distant traffic, rain, a low synth hum",
+                focusMode = FocusMode.FULL_STABLE,
+                hideTactic = HideTactic.SMOKE_FOREGROUND
+            )
+        )
+    }
+
     val all: List<GalleryTemplate> = listOf(
         gokuVsCell(),
         dbzKotaHancur(),
+        kisahKurir(),
         GalleryTemplate(
             id = "drama-hujan-jakarta",
             titleId = "Drama — Hujan di Jakarta",

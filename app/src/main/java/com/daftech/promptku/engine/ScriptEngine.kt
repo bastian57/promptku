@@ -174,7 +174,12 @@ data class ScriptInput(
     // v1.4 — Ambience Lock dari Mode Cepat (in-memory; tidak disimpan ke
     // ScriptItem — saat naskah dimuat ulang dari DB, ambience kembali
     // kosong dan user bisa isi lewat Ambience Lock proyek).
-    val ambienceEn: String = ""
+    val ambienceEn: String = "",
+    // v1.4.2 — token efek terdeteksi dari kalimat ("FIGHT,EXPLOSION,
+    // emotion_sad"), dihitung StoryInfer.toScriptInput dan dihitung ulang
+    // dari sinopsis saat naskah dimuat dari DB (ScriptItem.toScriptInput).
+    // In-memory saja; yang PERSISTEN per scene adalah DraftScene.effectId.
+    val effectIds: String = ""
 ) {
     fun isReady(): Boolean = synopsis.trim().split(Regex("\\s+")).size >= 10
 }
@@ -206,7 +211,11 @@ data class DraftScene(
     val axisSide: String,
     val transition: String,
     val directorNote: String,
-    val reAnchor: Boolean
+    val reAnchor: Boolean,
+    // v1.4.2 — id efek Perpustakaan Efek scene ini ("" = tanpa efek).
+    // Diisi otomatis oleh build() dari trigger kalimat, atau manual lewat
+    // chip efek per scene (cycleSceneEffect). Persist di ScriptSceneItem.
+    val effectId: String = ""
 ) {
     fun timecode(): String = ScriptEngine.timecodeFor(orderIndex)
 }
@@ -227,84 +236,84 @@ object ScriptPools {
     fun actionsFor(genre: Genre, beatIndex: Int): List<String> {
         val action = listOf(
             listOf(
-                "walks through the morning market carrying a delivery bag",
-                "weaves his motorcycle through slow traffic",
-                "delivers a parcel and waves goodbye",
-                "checks his phone while waiting at a red light",
-                "parks his motorcycle and stretches his shoulders",
-                "buys a coffee and sips it slowly",
-                "greets a shopkeeper and laughs warmly",
-                "rides past the old harbor as gulls circle"
+                "walks through the city street, alert and watchful",
+                "trains alone in the empty gym as rain falls outside",
+                "stands on the rooftop overlooking the sleeping city",
+                "sharpens his focus in the quiet room, breathing steadily",
+                "patrols the block, checking every shadow",
+                "buys a coffee and watches the street from the window",
+                "stretches his shoulders and cracks his knuckles",
+                "rides his motorcycle through the empty streets"
             ),
             listOf(
-                "opens the package and finds a glowing chip inside",
-                "stares at the chip as it pulses with light",
-                "hides the chip in his jacket pocket",
-                "looks over his shoulder as footsteps approach",
-                "closes the package and tucks it under his arm",
-                "reads the delivery note twice, hands shaking",
-                "locks the door and pulls the curtain shut",
-                "whispers a warning to himself and nods"
+                "hears a crash and turns toward the sound",
+                "sees a shadow fall across the street and stops",
+                "notices the city lights flicker and die",
+                "finds a warning carved into the wall",
+                "watches a stranger run past, terrified",
+                "hears a low roar from above the rooftops",
+                "receives a call and his face goes pale",
+                "spots a massive footprint in the cracked asphalt"
             ),
             listOf(
-                "studies a city map and marks three escape routes",
-                "meets a stranger who warns him to run",
-                "packs a small bag and locks the door",
+                "studies the surroundings and makes a plan",
+                "warns the crowd to run and take cover",
+                "gathers his courage and steps into the open",
                 "calls an old friend and asks for help",
-                "counts his money and hides it in his boot",
-                "memorizes the address and burns the paper",
-                "checks the chip once more before dawn",
-                "draws a route on the fogged window"
+                "memorizes the streets and picks his ground",
+                "ties his shoes tighter and rolls his shoulders",
+                "checks his fists and takes a fighting stance",
+                "draws a line in the dust and waits"
             ),
             listOf(
-                "sprints across rooftops as drones scan below",
-                "slides under a closing shutter and rolls to his feet",
-                "leaps between balconies above the crowded street",
-                "dodges through the night market as stalls crash behind him",
-                "swings across a gap on a loose cable",
-                "slides down a drainpipe and lands in an alley",
-                "hides behind a food cart as a drone passes",
+                "trades blows with the enemy, testing its guard",
+                "dodges a swinging arm and counters fast",
+                "leaps onto a parked car and surveys the fight",
+                "slides under a falling beam and rolls to his feet",
+                "sprints across the rooftops as debris rains down",
+                "swings from a loose cable across the gap",
+                "hides behind a food cart as the enemy passes",
                 "runs along the train tracks as headlights approach"
             ),
             listOf(
-                "discovers his friend betrayed him for money",
-                "watches the chip's light fade as the signal dies",
-                "runs through the rain as sirens close in",
-                "hides in a stairwell, breathing hard",
+                "takes a heavy blow and staggers back",
+                "watches his friend fall and grits his teeth",
+                "loses his footing on the wet ground",
+                "sees the city burn behind him and keeps moving",
+                "clutches his injured arm and breathes hard",
                 "finds his phone smashed on the wet pavement",
                 "watches his motorcycle burn across the street",
-                "clutches the chip as the rain soaks him",
                 "reads a threatening message and deletes it"
             ),
             listOf(
                 "is cornered in a dead-end alley by armed men",
-                "drops to his knees as the chip is torn away",
+                "drops to his knees as the enemy closes in",
                 "lies on the wet asphalt as boots surround him",
-                "reaches for the chip but a boot pins his hand",
+                "reaches out but a boot pins his hand",
                 "crawls toward the gutter as the men laugh",
                 "presses his forehead to the cold ground",
-                "watches the chip disappear into a black van",
+                "watches the last light fade from the street",
                 "lies still as the footsteps fade away"
             ),
             listOf(
                 "rises slowly, fists clenched, eyes burning",
                 "charges forward and throws a punch",
-                "snatches the chip back and sprints for the exit",
-                "stands tall in the smoke as the men hesitate",
+                "stands tall in the smoke as the enemy hesitates",
                 "wrenches a metal pipe free and swings it",
                 "shoves the leader aside and breaks through the door",
-                "grabs the chip from the table and runs",
-                "faces the men alone, breathing steadily"
+                "faces the enemy alone, breathing steadily",
+                "wipes the blood from his lip and smiles",
+                "roars and rushes back into the fight"
             ),
             listOf(
-                "walks into the sunrise, chip secured in his pocket",
-                "hands the chip to the woman who waited for him",
+                "walks on as the city wakes behind him",
                 "looks back once at the ruined city, then walks on",
-                "rides away as the city wakes behind him",
-                "watches the sun rise over the harbor",
-                "smiles quietly and pockets the chip for good",
-                "waves goodbye to the city that chased him",
-                "walks home as the morning light returns"
+                "helps a stranger to their feet and nods",
+                "stands on the rooftop as the sky clears",
+                "smiles quietly and walks home",
+                "waves goodbye to the city that tested him",
+                "sits on the curb and finally breathes out",
+                "walks home through the quiet street"
             )
         )
         val generic = listOf(
@@ -393,9 +402,118 @@ object ScriptPools {
         return if (genre == Genre.ACTION) action[idx] else generic[idx]
     }
 
+    // v1.4.2 — cerita kurir + chip (pool Action lama v1.0–v1.4.1) TIDAK
+    // LAGI jadi default. Ia hidup sebagai TEMPLATE KISAH EKSPLISIT:
+    // hanya dipakai kalau kalimatnya memang tentang kurir/paket/chip
+    // (isCourierStory), atau lewat template "Kurir Terakhir" di wizard.
+    // Default Action baru = pool netral di actionsFor (tanpa kurir/chip).
+    fun isCourierStory(synopsis: String): Boolean {
+        val lower = " " + synopsis.lowercase() + " "
+        return listOf(
+            "kurir", "paket", "antar", "pengiriman", "delivery", "chip",
+            "ojek", "ojol", "kiriman"
+        ).any { lower.contains(it) }
+    }
+
+    fun courierActionsFor(beatIndex: Int): List<String> {
+        val courier = listOf(
+            listOf(
+                "walks through the morning market carrying a delivery bag",
+                "weaves his motorcycle through slow traffic",
+                "delivers a parcel and waves goodbye",
+                "checks his phone while waiting at a red light",
+                "parks his motorcycle and stretches his shoulders",
+                "buys a coffee and sips it slowly",
+                "greets a shopkeeper and laughs warmly",
+                "rides past the old harbor as gulls circle"
+            ),
+            listOf(
+                "opens the package and finds a glowing chip inside",
+                "stares at the chip as it pulses with light",
+                "hides the chip in his jacket pocket",
+                "looks over his shoulder as footsteps approach",
+                "closes the package and tucks it under his arm",
+                "reads the delivery note twice, hands shaking",
+                "locks the door and pulls the curtain shut",
+                "whispers a warning to himself and nods"
+            ),
+            listOf(
+                "studies a city map and marks three escape routes",
+                "meets a stranger who warns him to run",
+                "packs a small bag and locks the door",
+                "calls an old friend and asks for help",
+                "counts his money and hides it in his boot",
+                "memorizes the address and burns the paper",
+                "checks the chip once more before dawn",
+                "draws a route on the fogged window"
+            ),
+            listOf(
+                "sprints across rooftops as drones scan below",
+                "slides under a closing shutter and rolls to his feet",
+                "leaps between balconies above the crowded street",
+                "dodges through the night market as stalls crash behind him",
+                "swings across a gap on a loose cable",
+                "slides down a drainpipe and lands in an alley",
+                "hides behind a food cart as a drone passes",
+                "runs along the train tracks as headlights approach"
+            ),
+            listOf(
+                "discovers his friend betrayed him for money",
+                "watches the chip's light fade as the signal dies",
+                "runs through the rain as sirens close in",
+                "hides in a stairwell, breathing hard",
+                "finds his phone smashed on the wet pavement",
+                "watches his motorcycle burn across the street",
+                "clutches the chip as the rain soaks him",
+                "reads a threatening message and deletes it"
+            ),
+            listOf(
+                "is cornered in a dead-end alley by armed men",
+                "drops to his knees as the chip is torn away",
+                "lies on the wet asphalt as boots surround him",
+                "reaches for the chip but a boot pins his hand",
+                "crawls toward the gutter as the men laugh",
+                "presses his forehead to the cold ground",
+                "watches the chip disappear into a black van",
+                "lies still as the footsteps fade away"
+            ),
+            listOf(
+                "rises slowly, fists clenched, eyes burning",
+                "charges forward and throws a punch",
+                "snatches the chip back and sprints for the exit",
+                "stands tall in the smoke as the men hesitate",
+                "wrenches a metal pipe free and swings it",
+                "shoves the leader aside and breaks through the door",
+                "grabs the chip from the table and runs",
+                "faces the men alone, breathing steadily"
+            ),
+            listOf(
+                "walks into the sunrise, chip secured in his pocket",
+                "hands the chip to the woman who waited for him",
+                "looks back once at the ruined city, then walks on",
+                "rides away as the city wakes behind him",
+                "watches the sun rise over the harbor",
+                "smiles quietly and pockets the chip for good",
+                "waves goodbye to the city that chased him",
+                "walks home as the morning light returns"
+            )
+        )
+        return courier[beatIndex % 8]
+    }
+
+    // Pool cerita untuk satu beat: kurir kalau kalimatnya memang kisah
+    // kurir, kalau tidak pool netral actionsFor (default Action baru).
+    fun actionsForStory(input: ScriptInput, beatIndex: Int): List<String> {
+        return if (input.genre == Genre.ACTION && isCourierStory(input.synopsis)) {
+            courierActionsFor(beatIndex)
+        } else {
+            actionsFor(input.genre, beatIndex)
+        }
+    }
+
     fun dialoguesFor(genre: Genre, beatIndex: Int): List<String> {
         val action = mapOf(
-            1 to listOf("What is this thing?", "This was not the delivery."),
+            1 to listOf("What is this thing?", "Something is wrong here."),
             2 to listOf("I need your help.", "There is no going back now."),
             3 to listOf("Follow me. Stay low.", "Did you see that?"),
             4 to listOf("You sold me out.", "It was never about the money."),
@@ -422,7 +540,7 @@ object ScriptPools {
     fun wantsFor(beatIndex: Int): String {
         return listOf(
             "{P} wants an ordinary day",
-            "{P} wants to know what the package hides",
+            "{P} wants to know what is happening",
             "{P} wants a plan to stay alive",
             "{P} wants to outrun {A}",
             "{P} wants to trust someone",
@@ -561,6 +679,66 @@ object ScriptEngine {
             "${shotSize.labelId}, ${lensMm}mm, ${move.labelId}: $reason"
     }
 
+    // v1.4.1 — aksi yang kata waktunya bertabrakan dengan waktu dunia
+    // di-skip, lalu pool diisi kembali sampai ukuran semula dengan aksi
+    // netral (supaya aturan "tidak ada aksi berulang dalam satu beat"
+    // tetap utuh walau 1-2 aksi terfilter). Dipakai build() + clearEffect().
+    fun usableActionsFor(actions: List<String>, beatIndex: Int, effectiveTimeOfDay: String): List<String> {
+        val filtered = actions.filter { action ->
+            !ScriptBeats.timeClashes(action, effectiveTimeOfDay)
+        }
+        val filled = (filtered + NEUTRAL_ACTIONS.filter { it !in filtered })
+            .take(actions.size)
+        return if (filled.isEmpty()) {
+            listOf(NEUTRAL_ACTIONS[beatIndex % NEUTRAL_ACTIONS.size])
+        } else {
+            filled
+        }
+    }
+
+    // v1.4.2 — tempel SATU efek ke scene: fragmen efek menggantikan aksi
+    // (kecuali efek CAMERA yang fragmentEn-nya kosong — aksinya tetap),
+    // override kamera/lensa/cahaya/sudut dari efek dipakai kalau ada.
+    fun applyEffect(scene: DraftScene, effectId: String): DraftScene {
+        val effect = EffectLibrary.byId(effectId) ?: return scene
+        return scene.copy(
+            actionEn = if (effect.fragmentEn.isNotBlank()) effect.fragmentEn else scene.actionEn,
+            cameraMove = effect.cameraMove ?: scene.cameraMove,
+            lensMm = effect.lensMm ?: scene.lensMm,
+            light = effect.lightKind ?: scene.light,
+            angle = effect.angle ?: scene.angle,
+            effectId = effect.id
+        )
+    }
+
+    // v1.4.2 — lepas efek dari scene (chip "Tanpa efek"): aksi kembali
+    // ke pool cerita beat itu + kamera/lensa/cahaya kembali ke default
+    // ketegangan beat. Dipakai cycleSceneEffect.
+    fun clearEffect(scene: DraftScene, input: ScriptInput): DraftScene {
+        val beats = ScriptBeats.forDuration(input.durationMinutes)
+        val beat = beats.firstOrNull { it.index == scene.sequenceIndex }
+            ?: return scene.copy(
+                effectId = "",
+                actionEn = NEUTRAL_ACTIONS[scene.sequenceIndex % NEUTRAL_ACTIONS.size]
+            )
+        val allocation = allocateClips(input.durationMinutes)
+        val beatStart = allocation.take(beats.indexOf(beat)).sum()
+        val clipIdx = (scene.orderIndex - beatStart).coerceIn(0, 7)
+        val pool = ScriptPools.actionsForStory(input, beat.index)
+        val worldTime = ScriptBeats.timeOfDayFromWorld(input.worldDescEn)
+        val effectiveTime = worldTime ?: beat.timeOfDay
+        val usable = usableActionsFor(pool, beat.index, effectiveTime)
+        return scene.copy(
+            effectId = "",
+            actionEn = usable.getOrElse(clipIdx % usable.size) {
+                NEUTRAL_ACTIONS[beat.index % NEUTRAL_ACTIONS.size]
+            },
+            cameraMove = if (clipIdx == 0) CameraMove.STATIC else ScriptBeats.moveForTension(beat.tension, clipIdx),
+            lensMm = ScriptBeats.lensForTension(beat.tension),
+            light = ScriptBeats.lightForTime(effectiveTime)
+        )
+    }
+
     fun build(input: ScriptInput, seed: Int = 0): ScriptDraft {
         val beats = ScriptBeats.forDuration(input.durationMinutes)
         val allocation = allocateClips(input.durationMinutes)
@@ -572,11 +750,14 @@ object ScriptEngine {
         val scenes = mutableListOf<DraftScene>()
         var globalClipIndex = 0
         var lastPoseEnd = "standing still"
+        // v1.4.2 — ukuran shot scene sebelumnya (fix two-shot berurutan:
+        // dua klip dialog berurutan tidak boleh sama-sama TWO_SHOT).
+        var prevShotSize: ShotSize? = null
 
         beats.forEachIndexed { beatIdx, beat ->
             val clipCount = allocation.getOrElse(beatIdx) { 0 }
             if (clipCount <= 0) return@forEachIndexed
-            val actions = ScriptPools.actionsFor(input.genre, beat.index)
+            val actions = ScriptPools.actionsForStory(input, beat.index)
             val dialogues = ScriptPools.dialoguesFor(input.genre, beat.index)
             val dialogueText = if (dialogues.isNotEmpty()) {
                 dialogues[(seed + beatIdx) % dialogues.size]
@@ -599,21 +780,7 @@ object ScriptEngine {
             val effectiveTimeOfDay = worldTime ?: beat.timeOfDay
             val light = ScriptBeats.lightForTime(effectiveTimeOfDay)
             val lens = ScriptBeats.lensForTension(beat.tension)
-            val filteredActions = actions.filter { action ->
-                !ScriptBeats.timeClashes(action, effectiveTimeOfDay)
-            }
-            // v1.4.1 — isi kembali pool sampai ukuran semula dengan aksi
-            // netral (supaya aturan "tidak ada aksi berulang dalam satu
-            // beat" tetap utuh walau 1-2 aksi terfilter).
-            val usableActions = run {
-                val filled = (filteredActions + NEUTRAL_ACTIONS.filter { it !in filteredActions })
-                    .take(actions.size)
-                if (filled.isEmpty()) {
-                    listOf(NEUTRAL_ACTIONS[beat.index % NEUTRAL_ACTIONS.size])
-                } else {
-                    filled
-                }
-            }
+            val usableActions = usableActionsFor(actions, beat.index, effectiveTimeOfDay)
 
             for (clipIdx in 0 until clipCount) {
                 // Aksi BERBEDA tiap klip dalam satu beat (pool 8 aksi,
@@ -623,14 +790,22 @@ object ScriptEngine {
                 // (kecuali pola sudah TWO_SHOT — pakai CLOSEUP supaya
                 // tidak ada dua klip berurutan berukuran sama);
                 // tanpa antagonis, TWO_SHOT di pola diganti MEDIUM.
+                // v1.4.2 — klip sebelumnya sudah TWO_SHOT -> CLOSEUP
+                // (cacat lapangan 16 Nov: Scene 4 + 5 export Bejo 6 scene
+                // dua-duanya two-shot berurutan).
                 val rawSize = SHOT_PATTERN[(clipIdx + beatIdx) % SHOT_PATTERN.size]
-                val shotSize = when {
+                val baseShotSize = when {
                     clipIdx == dialogueClipIdx && dialogueText.isNotBlank() &&
                         input.antagonist.isNotBlank() -> {
                         if (rawSize == ShotSize.TWO_SHOT) ShotSize.CLOSEUP else ShotSize.TWO_SHOT
                     }
                     rawSize == ShotSize.TWO_SHOT && input.antagonist.isBlank() -> ShotSize.MEDIUM
                     else -> rawSize
+                }
+                val shotSize = if (baseShotSize == ShotSize.TWO_SHOT && prevShotSize == ShotSize.TWO_SHOT) {
+                    ShotSize.CLOSEUP
+                } else {
+                    baseShotSize
                 }
                 // v1.4.1 — BIRD hanya untuk dunia yang dilihat dari atas;
                 // dunia jalanan (kota/gang/pasar/bengkel) selalu EYE.
@@ -677,31 +852,47 @@ object ScriptEngine {
                     clipIdx == 0 -> "MATCH CUT TO:"
                     else -> "CUT TO:"
                 }
-                scenes.add(
-                    DraftScene(
-                        sceneNumber = globalClipIndex + 1,
-                        orderIndex = globalClipIndex,
-                        sequenceIndex = beat.index,
-                        beatName = beat.nameId,
-                        slugline = slugline,
-                        want = want,
-                        obstacle = obstacle,
-                        actionEn = action,
-                        dialogue = dialogue,
-                        shotSize = shotSize,
-                        angle = angle,
-                        lensMm = lens,
-                        cameraMove = move,
-                        light = light,
-                        poseStart = poseStart,
-                        poseEnd = poseEnd,
-                        screenDirection = screenDirection,
-                        axisSide = axisSide,
-                        transition = transition,
-                        directorNote = directorNoteFor(beat, shotSize, lens, move),
-                        reAnchor = globalClipIndex > 0 && (globalClipIndex + 1) % 5 == 0
-                    )
+                // v1.4.2 — slot efek: fragmen efek MENGGANTIKAN aksi pool
+                // di scene ini (satu klip = satu efek), plus override
+                // kamera/lensa/cahaya/sudut dari efek. Efek CAMERA punya
+                // fragmentEn kosong -> aksinya tetap dari pool, hanya
+                // cara shot diambil yang berubah.
+                val effectId = EffectLibrary.effectIdForScene(
+                    beatIndex = beat.index,
+                    clipIdx = clipIdx,
+                    globalClipIndex = globalClipIndex,
+                    totalBeats = beats.size,
+                    detected = EffectLibrary.detectFromTokens(input.effectIds)
                 )
+                var scene = DraftScene(
+                    sceneNumber = globalClipIndex + 1,
+                    orderIndex = globalClipIndex,
+                    sequenceIndex = beat.index,
+                    beatName = beat.nameId,
+                    slugline = slugline,
+                    want = want,
+                    obstacle = obstacle,
+                    actionEn = action,
+                    dialogue = dialogue,
+                    shotSize = shotSize,
+                    angle = angle,
+                    lensMm = lens,
+                    cameraMove = move,
+                    light = light,
+                    poseStart = poseStart,
+                    poseEnd = poseEnd,
+                    screenDirection = screenDirection,
+                    axisSide = axisSide,
+                    transition = transition,
+                    directorNote = directorNoteFor(beat, shotSize, lens, move),
+                    reAnchor = globalClipIndex > 0 && (globalClipIndex + 1) % 5 == 0,
+                    effectId = effectId
+                )
+                if (effectId.isNotBlank()) {
+                    scene = applyEffect(scene, effectId)
+                }
+                scenes.add(scene)
+                prevShotSize = shotSize
                 lastPoseEnd = poseEnd
                 globalClipIndex += 1
             }
@@ -732,10 +923,22 @@ object ScriptEngine {
             poseStart = oldScene.poseStart,
             poseEnd = oldScene.poseEnd,
             dialogue = oldScene.dialogue,
-            transition = oldScene.transition
+            transition = oldScene.transition,
+            // v1.4.2 — efek scene lama dipertahankan; kalau scene lama
+            // "Tanpa efek" (""), pakai efek otomatis hasil rebuild.
+            effectId = if (oldScene.effectId.isNotBlank()) oldScene.effectId else newScene.effectId
         )
+        // v1.4.2 — override efek manual scene lama dipertahankan: kalau
+        // scene lama punya efek (manual atau otomatis), tempel ulang di
+        // atas scene hasil rebuild (aksi baru dari seed baru tetap kalah
+        // oleh efek yang sudah dipilih user).
+        val fixedWithEffect = if (oldScene.effectId.isNotBlank()) {
+            applyEffect(fixed, oldScene.effectId)
+        } else {
+            fixed
+        }
         val scenes = draft.scenes.map { scene ->
-            if (scene.orderIndex == sceneOrderIndex) fixed else scene
+            if (scene.orderIndex == sceneOrderIndex) fixedWithEffect else scene
         }
         return draft.copy(scenes = scenes)
     }

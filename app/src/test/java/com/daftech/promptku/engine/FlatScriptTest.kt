@@ -96,7 +96,7 @@ class FlatScriptTest {
         val draft = ScriptEngine.build(ScriptTemplates.drama3Min())
         val prompts = draft.scenes.map { it to PromptEngine.build(ScriptEngine.toShotInput(draft, it)) }
         val text = FountainExport.buildScriptText(draft, prompts)
-        assertTrue(text.contains("v1.4.1"))
+        assertTrue(text.contains("v1.4.2"))
         assertTrue(text.contains("SCENE 1 -"))
         assertTrue(text.contains("SCENE 18 -"))
         assertTrue(text.contains("Meter:"))

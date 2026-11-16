@@ -21,6 +21,7 @@ import com.daftech.promptku.engine.CharacterDna
 import com.daftech.promptku.engine.DialogueLang
 import com.daftech.promptku.engine.DialogueLine
 import com.daftech.promptku.engine.DraftScene
+import com.daftech.promptku.engine.EffectLibrary
 import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.GlobalLock
 import com.daftech.promptku.engine.LightKind
@@ -210,7 +211,9 @@ data class ScriptSceneItem(
     val light: String = "",
     val transition: String = "",
     val directorNote: String = "",
-    val reAnchor: Boolean = false
+    val reAnchor: Boolean = false,
+    // v1.4.2 — id efek Perpustakaan Efek scene ini ("" = tanpa efek).
+    val effectId: String = ""
 )
 
 @Dao
@@ -420,6 +423,14 @@ val MIGRATION_4_5: Migration = object : Migration(4, 5) {
     }
 }
 
+// v1.4.2 — Room v5 -> v6: effectId Perpustakaan Efek ikut tersimpan di
+// tabel script_scenes (1 ALTER aditif; baris lama aman, default '').
+val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE script_scenes ADD COLUMN effectId TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 // Konversi ScriptItem <-> ScriptInput (enum dibaca dengan runCatching).
 fun ScriptItem.toScriptInput(): ScriptInput {
     val card = if (
@@ -453,7 +464,11 @@ fun ScriptItem.toScriptInput(): ScriptInput {
         engine = runCatching { TargetEngine.valueOf(engine) }.getOrDefault(TargetEngine.FLOW),
         dialogueLang = runCatching { DialogueLang.valueOf(dialogueLang) }.getOrDefault(DialogueLang.EN),
         ambienceEn = ambienceEn,
-        characterCard = card
+        characterCard = card,
+        // v1.4.2 — token efek dihitung ulang dari sinopsis (deterministik,
+        // sama seperti saat build) supaya regenerateScene setelah reload
+        // tetap dapat efek otomatisnya.
+        effectIds = EffectLibrary.detect(synopsis).toTokens().joinToString(",")
     )
 }
 
@@ -518,7 +533,8 @@ fun DraftScene.toScriptSceneItem(scriptId: Long): ScriptSceneItem {
         light = light.name,
         transition = transition,
         directorNote = directorNote,
-        reAnchor = reAnchor
+        reAnchor = reAnchor,
+        effectId = effectId
     )
 }
 
@@ -563,7 +579,8 @@ fun ScriptSceneItem.toDraftScene(): DraftScene {
         axisSide = axisSide,
         transition = transition,
         directorNote = directorNote,
-        reAnchor = reAnchor
+        reAnchor = reAnchor,
+        effectId = effectId
     )
 }
 
@@ -572,7 +589,7 @@ fun ScriptSceneItem.toDraftScene(): DraftScene {
         HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class,
         ScriptItem::class, ScriptSceneItem::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class PromptKuDatabase : RoomDatabase() {
@@ -591,7 +608,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
                     context.applicationContext,
                     PromptKuDatabase::class.java,
                     "promptku.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
             }
         }
     }

@@ -159,8 +159,9 @@ object StoryInfer {
         ),
         Genre.ACTION to GenreRule(
             keywords = listOf(
-                "berantem", "bertarung", "pukul", "tendang", "super", "raksasa",
-                "kejar", "tembak", "silat", "jagoan", "duel", "berkelahi",
+                "berantem", "bertarung", "pukul", "mukul", "tinju", "ninju",
+                "tendang", "nendang", "tembak", "nembak", "super", "raksasa",
+                "kejar", "silat", "jagoan", "duel", "berkelahi",
                 "melawan"
             ),
             worldName = "Kota Malam",
@@ -319,13 +320,30 @@ object StoryInfer {
     }
 
     // 1 kalimat + nama tokoh + durasi -> ScriptInput siap build (flat v1.3).
+    // v1.4.2 — nama tokoh dari kalimat: kata berhuruf kapital pertama
+    // yang bukan kata umum ("Bejo melawan..." -> Bejo; "Di langit kota
+    // ..., Bejo melawan..." -> Bejo juga). Tidak ketemu -> "Raka".
+    // Efek terdeteksi dari kalimat masuk ScriptInput.effectIds.
+    fun heroNameFromSentence(sentence: String): String? {
+        val stopwords = setOf(
+            "Di", "Ke", "Dari", "Saat", "Ketika", "Suatu", "Ada", "Yang",
+            "Seorang", "Pada", "Dalam", "Sebuah", "Itu", "Ini", "Dan",
+            "Tapi", "Lalu", "Kemudian", "Jika", "Kalau", "Pagi", "Sore",
+            "Malam", "Hari", "Si", "Sang"
+        )
+        return sentence.split(Regex("[\\s,.;:!?\"'()]+"))
+            .firstOrNull { token ->
+                token.matches(Regex("[A-Z][a-z]{2,}")) && token !in stopwords
+            }
+    }
+
     fun toScriptInput(
         sentence: String,
         heroName: String,
         minutes: Int,
         inference: Inference
     ): ScriptInput {
-        val hero = heroName.trim().ifBlank { "Raka" }
+        val hero = heroName.trim().ifBlank { heroNameFromSentence(sentence) ?: "Raka" }
         return ScriptInput(
             title = sentence.trim().take(80),
             synopsis = sentence.trim(),
@@ -342,7 +360,8 @@ object StoryInfer {
             style = inference.style,
             engine = TargetEngine.FLOW,
             ambienceEn = inference.ambienceEn,
-            characterCard = inference.characterCard
+            characterCard = inference.characterCard,
+            effectIds = EffectLibrary.detect(sentence).toTokens().joinToString(",")
         )
     }
 }

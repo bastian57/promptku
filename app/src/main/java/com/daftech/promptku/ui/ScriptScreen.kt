@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.daftech.promptku.data.ScriptSceneItem
 import com.daftech.promptku.engine.CharacterCard
 import com.daftech.promptku.engine.DialogueLang
+import com.daftech.promptku.engine.EffectLibrary
 import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.ScriptEnding
 import com.daftech.promptku.engine.ScriptTemplates
@@ -495,6 +496,19 @@ fun ScriptScreen(viewModel: PromptKuViewModel, onGoToProjects: () -> Unit) {
                                     if (draftScene != null) {
                                         TextButton(onClick = { viewModel.previewScriptScene(draftScene) }) {
                                             Text("Preview Prompt")
+                                        }
+                                    }
+                                    // v1.4.2 — chip efek per scene: ketuk =
+                                    // efek berikutnya untuk beat scene ini
+                                    // ("Tanpa efek" selalu pertama).
+                                    if (activeId != null) {
+                                        TextButton(onClick = { viewModel.cycleSceneEffect(scene.orderIndex) }) {
+                                            Text(
+                                                "Efek: " + (
+                                                    EffectLibrary.byId(scene.effectId)?.nameId
+                                                        ?: "Tanpa efek"
+                                                    )
+                                            )
                                         }
                                     }
                                 }

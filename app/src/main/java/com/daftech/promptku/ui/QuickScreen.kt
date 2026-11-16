@@ -80,7 +80,7 @@ fun QuickScreen(
         OutlinedTextField(
             value = heroName,
             onValueChange = { viewModel.updateQuickHeroName(it) },
-            label = { Text("Nama tokoh (kosong = Raka)") },
+            label = { Text("Nama tokoh (kosong = dari kalimat)") },
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(12.dp))

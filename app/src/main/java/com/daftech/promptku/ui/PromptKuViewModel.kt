@@ -28,6 +28,7 @@ import com.daftech.promptku.engine.DialogueLang
 import com.daftech.promptku.engine.DialogueLine
 import com.daftech.promptku.engine.Dice
 import com.daftech.promptku.engine.DraftScene
+import com.daftech.promptku.engine.EffectLibrary
 import com.daftech.promptku.engine.FocusMode
 import com.daftech.promptku.engine.FountainExport
 import com.daftech.promptku.engine.GalleryTemplate
@@ -148,18 +149,15 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
 
     fun refreshAll() {
         viewModelScope.launch {
+            // v1.4.2 — seed DNA DBZ DIHAPUS (audit v1.4.1: Goku/Cell/Arena
+            // ditanam diam-diam ke DB di install pertama). Bersihkan baris
+            // seed lama sekali di sini, lalu muat DNA apa adanya: tab DNA
+            // hanya berisi DNA buatan user. Kosong di awal = benar.
+            withContext(Dispatchers.IO) { deleteSeedDna() }
             val chars = withContext(Dispatchers.IO) { db.dnaDao().byKind("CHARACTER") }
             val worlds = withContext(Dispatchers.IO) { db.dnaDao().byKind("WORLD") }
-            if (chars.isEmpty() && worlds.isEmpty()) {
-                withContext(Dispatchers.IO) { seedDefaultDna() }
-                val chars2 = withContext(Dispatchers.IO) { db.dnaDao().byKind("CHARACTER") }
-                val worlds2 = withContext(Dispatchers.IO) { db.dnaDao().byKind("WORLD") }
-                dnaCharacters = chars2
-                dnaWorlds = worlds2
-            } else {
-                dnaCharacters = chars
-                dnaWorlds = worlds
-            }
+            dnaCharacters = chars
+            dnaWorlds = worlds
             val hist = withContext(Dispatchers.IO) { db.historyDao().all() }
             history = hist
             val projs = withContext(Dispatchers.IO) { db.projectDao().allProjects() }
@@ -180,32 +178,22 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private suspend fun seedDefaultDna() {
-        val now = System.currentTimeMillis()
-        db.dnaDao().insert(
-            DnaItem(
-                kind = "CHARACTER",
-                name = Templates.gokuDna.name,
-                descriptionEn = Templates.gokuDna.descriptionEn,
-                createdAt = now
-            )
+    // v1.4.2 — hapus baris DNA seed (Goku/Cell/Arena Cell Games) yang
+    // namanya + deskripsinya PERSIS sama dengan template. DNA buatan user
+    // (nama/deskripsi beda) tidak tersentuh. Dijalankan tiap refreshAll —
+    // tabel DNA kecil, biayanya tidak terasa.
+    private suspend fun deleteSeedDna() {
+        val seeds = listOf(
+            Templates.gokuDna.name to Templates.gokuDna.descriptionEn,
+            Templates.cellDna.name to Templates.cellDna.descriptionEn,
+            Templates.gokuVsCellWorld.name to Templates.gokuVsCellWorld.descriptionEn
         )
-        db.dnaDao().insert(
-            DnaItem(
-                kind = "CHARACTER",
-                name = Templates.cellDna.name,
-                descriptionEn = Templates.cellDna.descriptionEn,
-                createdAt = now + 1
-            )
-        )
-        db.dnaDao().insert(
-            DnaItem(
-                kind = "WORLD",
-                name = Templates.gokuVsCellWorld.name,
-                descriptionEn = Templates.gokuVsCellWorld.descriptionEn,
-                createdAt = now + 2
-            )
-        )
+        val all = db.dnaDao().all()
+        all.filter { item ->
+            seeds.any { (name, desc) ->
+                item.name == name && item.descriptionEn == desc
+            }
+        }.forEach { db.dnaDao().delete(it) }
     }
 
     fun updateWizardStep(step: Int) {
@@ -732,6 +720,41 @@ class PromptKuViewModel(application: Application) : AndroidViewModel(application
             scriptScore = ScriptScore.score(rebuilt)
             refreshAll()
             statusMessage = "Scene ${orderIndex + 1} dikembangkan ulang."
+        }
+    }
+
+    // v1.4.2 — chip Efek per scene: ketuk = efek berikutnya untuk beat
+    // scene itu (daftar kandidat dari EffectLibrary.candidatesForBeat,
+    // "Tanpa efek" selalu pertama). Efek ditempel ke scene + disimpan ke
+    // DB (effectId + actionEn/kamera/lensa/cahaya hasil efek), jadi
+    // generate/export/preview memakai efek yang dipilih.
+    fun cycleSceneEffect(orderIndex: Int) {
+        val draft = scriptDraft ?: return
+        val scriptId = activeScriptId ?: return
+        val scene = draft.scenes.firstOrNull { it.orderIndex == orderIndex } ?: return
+        val candidates = EffectLibrary.candidatesForBeat(scene.sequenceIndex)
+        val currentPos = candidates.indexOf(scene.effectId).coerceAtLeast(0)
+        val nextId = candidates[(currentPos + 1) % candidates.size]
+        viewModelScope.launch {
+            val updated = if (nextId.isBlank()) {
+                ScriptEngine.clearEffect(scene, draft.input)
+            } else {
+                ScriptEngine.applyEffect(scene, nextId)
+            }
+            val items = withContext(Dispatchers.IO) { db.scriptDao().scenesOf(scriptId) }
+            val oldItem = items.firstOrNull { it.orderIndex == orderIndex } ?: return@launch
+            withContext(Dispatchers.IO) {
+                db.scriptDao().updateScene(
+                    updated.toScriptSceneItem(scriptId).copy(id = oldItem.id, approved = oldItem.approved)
+                )
+            }
+            scriptDraft = draft.copy(
+                scenes = draft.scenes.map { if (it.orderIndex == orderIndex) updated else it }
+            )
+            scriptScore = ScriptScore.score(scriptDraft!!)
+            refreshAll()
+            val name = EffectLibrary.byId(nextId)?.nameId ?: "Tanpa efek"
+            statusMessage = "Scene ${orderIndex + 1} — efek: $name."
         }
     }
 

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -29,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.daftech.promptku.engine.Templates
 import com.daftech.promptku.ui.DnaScreen
+import com.daftech.promptku.ui.EffectsScreen
 import com.daftech.promptku.ui.HistoryScreen
 import com.daftech.promptku.ui.ProjectScreen
 import com.daftech.promptku.ui.PromptKuTheme
@@ -67,14 +69,15 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
         }
     }
 
-    val tabs = listOf("Buat", "Template", "Proyek", "Naskah", "DNA", "Riwayat")
+    val tabs = listOf("Buat", "Template", "Proyek", "Naskah", "DNA", "Riwayat", "Efek")
     val icons = listOf(
         Icons.Filled.Create,
         Icons.Filled.Movie,
         Icons.Filled.Folder,
         Icons.Filled.Description,
         Icons.Filled.Person,
-        Icons.Filled.History
+        Icons.Filled.History,
+        Icons.Filled.Star
     )
 
     Scaffold(
@@ -132,6 +135,7 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
                 )
                 4 -> DnaScreen(viewModel = viewModel)
                 5 -> HistoryScreen(viewModel = viewModel)
+                6 -> EffectsScreen()
             }
         }
     }
