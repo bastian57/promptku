@@ -29,15 +29,20 @@ import com.daftech.promptku.engine.StoryInfer
 import com.daftech.promptku.engine.V2Beat
 import com.daftech.promptku.engine.V2Character
 import com.daftech.promptku.engine.V2Episode
+import com.daftech.promptku.engine.V2Call
 import com.daftech.promptku.engine.V2Mode
 import com.daftech.promptku.engine.V2Pipeline
 import com.daftech.promptku.engine.V2ScenePlan
 import com.daftech.promptku.engine.V2ScenePrompt
 import com.daftech.promptku.engine.V2VisionDesc
 import com.daftech.promptku.engine.ValidationGates
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -84,6 +89,10 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var statusMessage by mutableStateOf("")
         private set
+    // Job prompter yang sedang jalan (untuk tombol Batalkan) + id baris
+    // bible yang tersimpan (untuk menyimpan koreksi chip ke cache).
+    private var buildJob: Job? = null
+    private var savedBibleId: Long? = null
     var quotaCounts by mutableStateOf<Map<com.daftech.promptku.engine.V2Provider, Int>>(emptyMap())
         private set
     var filmsEstimate by mutableStateOf(0)
@@ -194,28 +203,35 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             busy = true
             progress = "Mendeskripsikan gambar (Groq Vision)..."
-            val (descs, fail) = withContext(Dispatchers.IO) {
-                pipeline().describeImages(
-                    images.mapIndexed { i, img -> i to img.base64 },
-                    images.map { it.label }
-                )
-            }
-            if (fail != null && descs.isEmpty()) {
-                statusMessage = fail.message
-            } else {
-                images = images.map { img ->
-                    val desc = descs.firstOrNull { it.imageIndex == images.indexOf(img) }
-                    if (desc != null) img.copy(vision = desc) else img
+            try {
+                val (descs, fail) = withContext(Dispatchers.IO) {
+                    pipeline().describeImages(
+                        images.mapIndexed { i, img -> i to img.base64 },
+                        images.map { it.label }
+                    )
                 }
-                statusMessage = if (fail != null) {
-                    "Sebagian gambar gagal dideskripsikan: ${fail.message}"
+                if (fail != null && descs.isEmpty()) {
+                    statusMessage = fail.message
                 } else {
-                    "${descs.size} gambar dideskripsikan. Periksa labelnya, koreksi kalau salah."
+                    images = images.map { img ->
+                        val desc = descs.firstOrNull { it.imageIndex == images.indexOf(img) }
+                        if (desc != null) img.copy(vision = desc) else img
+                    }
+                    statusMessage = if (fail != null) {
+                        "Sebagian gambar gagal dideskripsikan: ${fail.message}"
+                    } else {
+                        "${descs.size} gambar dideskripsikan. Periksa labelnya, koreksi kalau salah."
+                    }
                 }
+                refreshQuota()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal mendeskripsikan gambar: ${e.message} — coba lagi."
+            } finally {
+                busy = false
+                progress = ""
             }
-            refreshQuota()
-            busy = false
-            progress = ""
         }
     }
 
@@ -235,28 +251,33 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             busy = true
             progress = "Sutradara senior sedang mengembangkan cerita..."
-            val vision = images.mapNotNull { it.vision }
-            val hint = V2Pipeline.isCourierHint(trimmed)
-            val (result, fail) = withContext(Dispatchers.IO) {
-                pipeline().developStory(trimmed, durationMinutes, vision, hint)
-            }
-            if (fail != null) {
-                statusMessage = fail.message + " (Draft offline tetap bisa dipakai — tombol di bawah.)"
+            try {
+                val vision = images.mapNotNull { it.vision }
+                val hint = V2Pipeline.isCourierHint(trimmed)
+                val (result, fail) = withContext(Dispatchers.IO) {
+                    pipeline().developStory(trimmed, durationMinutes, vision, hint)
+                }
+                if (fail != null) {
+                    statusMessage = fail.message + " (Draft offline tetap bisa dipakai — tombol di bawah.)"
+                    return@launch
+                }
+                if (result != null) {
+                    bible = result
+                    isOfflineDraft = false
+                    withContext(Dispatchers.IO) { saveBible(result, trimmed) }
+                    loadSavedBibles()
+                    step = V2Step.STORY
+                    statusMessage = "Cerita jadi. Baca, koreksi chip-nya, lalu setujui."
+                }
+                refreshQuota()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal mengembangkan cerita: ${e.message} — coba lagi."
+            } finally {
                 busy = false
                 progress = ""
-                return@launch
             }
-            if (result != null) {
-                bible = result
-                isOfflineDraft = false
-                withContext(Dispatchers.IO) { saveBible(result, trimmed) }
-                loadSavedBibles()
-                step = V2Step.STORY
-                statusMessage = "Cerita jadi. Baca, koreksi chip-nya, lalu setujui."
-            }
-            refreshQuota()
-            busy = false
-            progress = ""
         }
     }
 
@@ -340,14 +361,37 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateCourierChip(value: Boolean) {
         bible = bible?.copy(isCourier = value)
+        persistBibleEdits()
     }
 
     fun updateWorldName(value: String) {
         bible = bible?.copy(worldName = value)
+        persistBibleEdits()
     }
 
     fun updateAntagonistName(value: String) {
         bible = bible?.copy(antagonistName = value)
+        persistBibleEdits()
+    }
+
+    /**
+     * Simpan koreksi chip/dunia/antagonis ke baris cache yang sama — kalau
+     * tidak, cerita yang dibuka ulang dari tab Cerita kembali ke nilai lama
+     * (chip cuma hidup di memori).
+     */
+    private fun persistBibleEdits() {
+        val current = bible ?: return
+        val id = savedBibleId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val item = db.v2BibleDao().byId(id) ?: return@launch
+            db.v2BibleDao().update(
+                item.copy(
+                    bibleJson = JsonLite.stringify(
+                        com.daftech.promptku.engine.V2Models.bibleToJson(current)
+                    )
+                )
+            )
+        }
     }
 
     fun requestRevision(instruction: String) {
@@ -359,18 +403,25 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             busy = true
             progress = "Sutradara merevisi cerita..."
-            val (revised, fail) = withContext(Dispatchers.IO) {
-                pipeline().reviseStory(current, instruction.trim())
+            try {
+                val (revised, fail) = withContext(Dispatchers.IO) {
+                    pipeline().reviseStory(current, instruction.trim())
+                }
+                if (fail != null) {
+                    statusMessage = fail.message
+                } else if (revised != null) {
+                    bible = revised
+                    statusMessage = "Revisi selesai. Baca lagi sebelum setuju."
+                }
+                refreshQuota()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal merevisi cerita: ${e.message} — coba lagi."
+            } finally {
+                busy = false
+                progress = ""
             }
-            if (fail != null) {
-                statusMessage = fail.message
-            } else if (revised != null) {
-                bible = revised
-                statusMessage = "Revisi selesai. Baca lagi sebelum setuju."
-            }
-            refreshQuota()
-            busy = false
-            progress = ""
         }
     }
 
@@ -378,64 +429,107 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
 
     fun approveAndBuildPrompts() {
         val current = bible ?: return
-        viewModelScope.launch {
+        buildJob = viewModelScope.launch {
             busy = true
             progress = "Prompter senior membuat ${current.totalScenes} prompt scene..."
-            val mode = if (images.isNotEmpty()) V2Mode.REFERENCE else V2Mode.TEXT_ONLY
-            val isFight = current.genre == com.daftech.promptku.engine.Genre.ACTION ||
-                EffectLibrary.detect(current.sourceIdea).fight
-            val (plans, fail) = withContext(Dispatchers.IO) {
-                pipeline().buildPrompts(current)
-            }
-            if (fail != null && plans.isEmpty()) {
-                statusMessage = fail.message
-                busy = false
-                progress = ""
-                return@launch
-            }
-            var rendered = ModeRender.renderAll(current, plans, mode, isFight)
-            var gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
-            // Gerbang 6: coba ulang 1x scene yang gagal (kecuali G4 — itu
-            // soal render, bukan soal LLM), lalu tandai sisanya.
-            val failedNums = gateSceneNumbers(gateResults, excludeG4 = true)
-            if (failedNums.isNotEmpty()) {
-                progress = "Mengulang ${failedNums.size} scene yang gagal gerbang..."
-                val prevExit = "Retry for scenes ${failedNums.joinToString(", ")}: keep continuity, fix the flagged issues."
-                val (retryPlans, _) = withContext(Dispatchers.IO) {
-                    pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit)
+            try {
+                val mode = if (images.isNotEmpty()) V2Mode.REFERENCE else V2Mode.TEXT_ONLY
+                val isFight = current.genre == com.daftech.promptku.engine.Genre.ACTION ||
+                    EffectLibrary.detect(current.sourceIdea).fight
+                val (plans, fail) = withContext(Dispatchers.IO) {
+                    try {
+                        // Batas keras 15 menit: satu batch yang nyangkut (DNS
+                        // WiFi, server diam) tidak boleh bikin spinner abadi.
+                        // 15 menit, bukan 10 — run free-tier yang lambat tapi
+                        // jalan (5 batch + retry) wajar sampai ~11 menit.
+                        withTimeout(900_000L) {
+                            pipeline().buildPrompts(current) { done, total ->
+                                // Callback dipanggil dari thread IO — lempar
+                                // ke Main (tulis state Compose dari IO crash).
+                                viewModelScope.launch(Dispatchers.Main) {
+                                    progress = "Prompter senior: batch $done/$total (${current.totalScenes} scene)..."
+                                }
+                            }
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        emptyList<V2ScenePlan>() to V2Call.Fail(
+                            "Prompter timeout 15 menit — ada batch yang nyangkut " +
+                                "(cek koneksi / pindah ke data seluler). Cerita tersimpan, coba lagi.",
+                            retryable = true
+                        )
+                    }
                 }
-                if (retryPlans.isNotEmpty()) {
-                    val retryRendered = ModeRender.renderAll(current, retryPlans, mode, isFight)
-                    val byNum = retryRendered.associateBy { it.sceneNumber }
-                    rendered = rendered.map { scene -> byNum[scene.sceneNumber] ?: scene }
+                if (fail != null && plans.isEmpty()) {
+                    statusMessage = fail.message
+                    return@launch
+                }
+                var rendered = ModeRender.renderAll(current, plans, mode, isFight)
+                var gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
+                // Gerbang 6: coba ulang 1x scene yang gagal (kecuali G4 — itu
+                // soal render, bukan soal LLM), lalu tandai sisanya.
+                val failedNums = gateSceneNumbers(gateResults, excludeG4 = true)
+                if (failedNums.isNotEmpty()) {
+                    progress = "Mengulang ${failedNums.size} scene yang gagal gerbang..."
+                    val prevExit = "Retry for scenes ${failedNums.joinToString(", ")}: keep continuity, fix the flagged issues."
+                    val (retryPlans, _) = withContext(Dispatchers.IO) {
+                        try {
+                            withTimeout(300_000L) {
+                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit)
+                            }
+                        } catch (e: TimeoutCancellationException) {
+                            // Retry nyangkut: pakai hasil pertama, jangan hang.
+                            emptyList<V2ScenePlan>() to null
+                        }
+                    }
+                    if (retryPlans.isNotEmpty()) {
+                        val retryRendered = ModeRender.renderAll(current, retryPlans, mode, isFight)
+                        val byNum = retryRendered.associateBy { it.sceneNumber }
+                        rendered = rendered.map { scene -> byNum[scene.sceneNumber] ?: scene }
+                        gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
+                    }
+                }
+                val stillFailing = gateSceneNumbers(gateResults, excludeG4 = false)
+                if (stillFailing.isNotEmpty()) {
+                    val reasons = gateResults.filter { !it.passed }
+                        .flatMap { it.failures }.joinToString("; ")
+                    rendered = rendered.map { scene ->
+                        if (scene.sceneNumber in stillFailing) {
+                            scene.copy(needsReview = true, reviewReason = reasons.take(300))
+                        } else scene
+                    }
                     gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
                 }
-            }
-            val stillFailing = gateSceneNumbers(gateResults, excludeG4 = false)
-            if (stillFailing.isNotEmpty()) {
-                val reasons = gateResults.filter { !it.passed }
-                    .flatMap { it.failures }.joinToString("; ")
-                rendered = rendered.map { scene ->
-                    if (scene.sceneNumber in stillFailing) {
-                        scene.copy(needsReview = true, reviewReason = reasons.take(300))
-                    } else scene
+                scenes = rendered
+                gates = gateResults
+                withContext(Dispatchers.IO) { saveScenes(current, rendered) }
+                step = V2Step.PROMPTS
+                val flagged = rendered.count { it.needsReview }
+                statusMessage = if (flagged == 0) {
+                    "Semua ${rendered.size} prompt lolos 6 gerbang validasi."
+                } else {
+                    "$flagged dari ${rendered.size} scene ditandai perlu cek manual — baca alasannya di tiap scene."
                 }
-                gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
+                refreshQuota()
+            } catch (e: CancellationException) {
+                // Dibatalkan tombol Batalkan (atau ViewModel dibersihkan):
+                // JANGAN timpa pesan "Dibatalkan" dengan pesan error.
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal membuat prompt: ${e.message} — cerita tersimpan, coba lagi."
+            } finally {
+                busy = false
+                progress = ""
             }
-            scenes = rendered
-            gates = gateResults
-            withContext(Dispatchers.IO) { saveScenes(current, rendered) }
-            step = V2Step.PROMPTS
-            val flagged = rendered.count { it.needsReview }
-            statusMessage = if (flagged == 0) {
-                "Semua ${rendered.size} prompt lolos 6 gerbang validasi."
-            } else {
-                "$flagged dari ${rendered.size} scene ditandai perlu cek manual — baca alasannya di tiap scene."
-            }
-            refreshQuota()
-            busy = false
-            progress = ""
         }
+    }
+
+    /** Batalkan prompter yang sedang jalan — cerita tetap tersimpan. */
+    fun cancelBuild() {
+        buildJob?.cancel()
+        buildJob = null
+        busy = false
+        progress = ""
+        statusMessage = "Dibatalkan — cerita tersimpan di tab Cerita, bisa diulang kapan saja."
     }
 
     private fun gateSceneNumbers(results: List<GateResult>, excludeG4: Boolean): List<Int> {
@@ -455,7 +549,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun saveBible(result: StoryBible, ideaText: String) {
         val json = JsonLite.stringify(com.daftech.promptku.engine.V2Models.bibleToJson(result))
-        db.v2BibleDao().insert(
+        savedBibleId = db.v2BibleDao().insert(
             V2BibleItem(title = result.title, idea = ideaText, bibleJson = json, createdAt = System.currentTimeMillis())
         )
     }
@@ -490,46 +584,54 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadBible(id: Long) {
+        savedBibleId = id
         viewModelScope.launch {
             busy = true
-            val loaded = withContext(Dispatchers.IO) {
-                val item = db.v2BibleDao().byId(id) ?: return@withContext null
-                val parsed = runCatching {
-                    JsonLite.parse(item.bibleJson) as? com.daftech.promptku.engine.Json.Obj
-                }.getOrNull()?.let { com.daftech.promptku.engine.V2Models.bibleFromJson(it) }
-                val sceneItems = db.v2SceneDao().ofBible(id)
-                parsed to sceneItems
-            }
-            if (loaded?.first != null) {
-                bible = loaded.first
-                isOfflineDraft = false
-                scenes = loaded.second.map { item ->
-                    val plan = runCatching {
-                        val obj = JsonLite.parse(item.planJson) as? com.daftech.promptku.engine.Json.Obj
-                        obj?.let { o ->
-                            com.daftech.promptku.engine.V2Models.scenePlansFromJson(
-                                com.daftech.promptku.engine.Json.arrOf(o)
-                            ).firstOrNull()
-                        }
-                    }.getOrNull()
-                    V2ScenePrompt(
-                        sceneNumber = item.sceneNumber,
-                        plan = plan ?: V2ScenePlan(item.sceneNumber, "", "", 35, "", "", "", "", "", "", "", "", ""),
-                        flowText = item.flowText,
-                        klingText = item.klingText,
-                        seedanceText = item.seedanceText,
-                        wanText = item.wanText,
-                        needsReview = item.needsReview,
-                        reviewReason = item.reviewReason
-                    )
+            try {
+                val loaded = withContext(Dispatchers.IO) {
+                    val item = db.v2BibleDao().byId(id) ?: return@withContext null
+                    val parsed = runCatching {
+                        JsonLite.parse(item.bibleJson) as? com.daftech.promptku.engine.Json.Obj
+                    }.getOrNull()?.let { com.daftech.promptku.engine.V2Models.bibleFromJson(it) }
+                    val sceneItems = db.v2SceneDao().ofBible(id)
+                    parsed to sceneItems
                 }
-                gates = bible?.let { ValidationGates.runGates(it, scenes, images.isNotEmpty()) }.orEmpty()
-                step = V2Step.PROMPTS
-                statusMessage = "Cerita \"${loaded.first?.title}\" dimuat dari cache (0 panggilan API)."
-            } else {
-                statusMessage = "Cerita tidak bisa dimuat dari cache."
+                if (loaded?.first != null) {
+                    bible = loaded.first
+                    isOfflineDraft = false
+                    scenes = loaded.second.map { item ->
+                        val plan = runCatching {
+                            val obj = JsonLite.parse(item.planJson) as? com.daftech.promptku.engine.Json.Obj
+                            obj?.let { o ->
+                                com.daftech.promptku.engine.V2Models.scenePlansFromJson(
+                                    com.daftech.promptku.engine.Json.arrOf(o)
+                                ).firstOrNull()
+                            }
+                        }.getOrNull()
+                        V2ScenePrompt(
+                            sceneNumber = item.sceneNumber,
+                            plan = plan ?: V2ScenePlan(item.sceneNumber, "", "", 35, "", "", "", "", "", "", "", "", ""),
+                            flowText = item.flowText,
+                            klingText = item.klingText,
+                            seedanceText = item.seedanceText,
+                            wanText = item.wanText,
+                            needsReview = item.needsReview,
+                            reviewReason = item.reviewReason
+                        )
+                    }
+                    gates = bible?.let { ValidationGates.runGates(it, scenes, images.isNotEmpty()) }.orEmpty()
+                    step = V2Step.PROMPTS
+                    statusMessage = "Cerita \"${loaded.first?.title}\" dimuat dari cache (0 panggilan API)."
+                } else {
+                    statusMessage = "Cerita tidak bisa dimuat dari cache."
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal memuat cerita dari cache: ${e.message}"
+            } finally {
+                busy = false
             }
-            busy = false
         }
     }
 

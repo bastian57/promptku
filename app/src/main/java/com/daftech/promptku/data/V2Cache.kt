@@ -6,6 +6,7 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
@@ -58,6 +59,9 @@ interface V2BibleDao {
 
     @Query("SELECT * FROM v2_bibles WHERE id = :id LIMIT 1")
     fun byId(id: Long): V2BibleItem?
+
+    @Update
+    fun update(bible: V2BibleItem)
 
     @Query("DELETE FROM v2_bibles WHERE id = :id")
     fun delete(id: Long)

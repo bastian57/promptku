@@ -124,6 +124,11 @@ fun V2StoryScreen(v2: V2ViewModel) {
                     CircularProgressIndicator()
                     Text(v2.progress)
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { v2.cancelBuild() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Batalkan") }
             }
             if (v2.statusMessage.isNotBlank()) {
                 Text(v2.statusMessage)

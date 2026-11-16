@@ -99,6 +99,25 @@ class V2PipelineTest {
     }
 
     @Test
+    fun buildPromptsReportsBatchProgress() {
+        val seen = mutableListOf<Pair<Int, Int>>()
+        val transport = HttpTransport { _, _, body ->
+            val wanted = Regex("scene numbers ([0-9, ]+)").find(body)?.groupValues?.get(1)
+                ?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: listOf(1)
+            val out = wanted.map { n ->
+                """{"scene_number": $n, "action_en": "action $n", "camera_move": "static", "lens_mm": 35, "shotSize": "medium", "angle": "eye", "dialogue_id": "", "dialogue_en": "", "audio_en": "", "effect_id": "", "want_en": "", "obstacle_en": "", "transition_en": ""}"""
+            }
+            HttpResult(200, geminiEnvelope("[" + out.joinToString(",") + "]"))
+        }
+        val pipeline = V2Pipeline(transport, "AIza_x", "gsk_x")
+        val testBible = bible().copy(durationMinutes = 3)
+        val (plans, fail) = pipeline.buildPrompts(testBible) { done, total -> seen.add(done to total) }
+        assertNull(fail)
+        assertEquals(18, plans.size)
+        assertEquals(listOf(1 to 5, 2 to 5, 3 to 5, 4 to 5, 5 to 5), seen)
+    }
+
+    @Test
     fun malformedDirectorJsonFailsCleanly() {
         val transport = HttpTransport { _, _, _ ->
             HttpResult(200, geminiEnvelope("bukan json sama sekali"))

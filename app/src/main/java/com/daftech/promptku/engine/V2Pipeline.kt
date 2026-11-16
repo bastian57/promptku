@@ -141,15 +141,19 @@ class V2Pipeline(
     }
 
     /** Prompter: batch 3–4 scene per panggilan, semua scene bible. */
-    fun buildPrompts(bible: StoryBible): Pair<List<V2ScenePlan>, V2Call.Fail?> {
+    fun buildPrompts(
+        bible: StoryBible,
+        onBatch: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val all = mutableListOf<V2ScenePlan>()
         val total = bible.totalScenes
         val batches = (1..total).chunked(4)
         var previousExit = "Opening: ${bible.beats.firstOrNull()?.summaryEn.orEmpty()}"
-        for (batch in batches) {
+        for ((index, batch) in batches.withIndex()) {
             val (plans, fail) = buildPromptBatch(bible, batch, previousExit)
             if (fail != null) return all to fail
             all.addAll(plans)
+            onBatch(index + 1, batches.size)
             previousExit = plans.lastOrNull()?.let {
                 "Scene ${it.sceneNumber} ends: ${it.actionEn}. ${it.transitionEn}"
             } ?: previousExit
