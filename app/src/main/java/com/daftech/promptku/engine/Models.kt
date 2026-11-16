@@ -160,6 +160,15 @@ data class CharacterCard(
         .filter { it.isNotBlank() }
         .joinToString(", ")
 
+    // v1.4.1 — deskripsi untuk subject line: sifat + benda + wajah,
+    // TANPA gestur pose. Gestur ("fist raised") pindah ke klausa
+    // karakter terpisah supaya tidak bertabrakan dengan poseEnd
+    // (berbaring/berlutut) — cacat lapangan 16 Nov.
+    fun subjectDescription(): String = listOf(trait, objectProp, faceAnchor)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(", ")
+
     fun wordCount(): Int = MythFilter.countWords(toDescription())
 
     fun isEmpty(): Boolean = toDescription().isBlank()

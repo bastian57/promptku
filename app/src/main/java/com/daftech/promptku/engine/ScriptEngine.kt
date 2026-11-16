@@ -67,6 +67,57 @@ object ScriptBeats {
         }
     }
 
+    // v1.4.1 — baca waktu dari deskripsi dunia ("at night" -> NIGHT).
+    // Null kalau dunia tidak menyebut waktu (pakai waktu beat seperti biasa).
+    // Dunia yang bilang "malam" berarti SELURUH film malam — beat tidak
+    // boleh menimpa dengan DAY/DUSK/GOLDEN HOUR (cacat lapangan 16 Nov:
+    // 18/30 scene Bejo bercahaya siang di dunia malam).
+    fun timeOfDayFromWorld(worldDescEn: String): String? {
+        val lower = worldDescEn.lowercase()
+        return when {
+            lower.contains("night") || lower.contains("midnight") -> "NIGHT"
+            lower.contains("dawn") || lower.contains("sunrise") -> "DAWN"
+            lower.contains("dusk") || lower.contains("sunset") || lower.contains("golden hour") -> "DUSK"
+            lower.contains("morning") -> "MORNING"
+            lower.contains("noon") || lower.contains("midday") -> "DAY"
+            else -> null
+        }
+    }
+
+    // v1.4.1 — dunia yang memang dilihat dari atas (BIRD angle boleh).
+    // Jalanan kota/gang/pasar/bengkel = EYE/LOW (cacat lapangan 16 Nov:
+    // bird's-eye di jalanan kota diabaikan model karena first-frame
+    // eye-level mengunci framing).
+    fun worldSeenFromAbove(worldDescEn: String): Boolean {
+        val lower = worldDescEn.lowercase()
+        return lower.contains("high above") || lower.contains("above the clouds") ||
+            lower.contains("mountain") || lower.contains("rice field") ||
+            lower.contains("beach") || lower.contains("aerial") ||
+            lower.contains("from above")
+    }
+
+    // v1.4.1 — kata waktu di dalam satu aksi pool ("morning market").
+    // Null kalau aksi tidak menyebut waktu.
+    fun timeWordOf(text: String): String? {
+        val lower = text.lowercase()
+        return when {
+            lower.contains("morning") -> "MORNING"
+            lower.contains("dawn") || lower.contains("sunrise") -> "DAWN"
+            lower.contains("noon") || lower.contains("midday") -> "DAY"
+            lower.contains("dusk") || lower.contains("sunset") || lower.contains("golden") -> "DUSK"
+            lower.contains("night") || lower.contains("midnight") -> "NIGHT"
+            else -> null
+        }
+    }
+
+    // v1.4.1 — aksi bertabrakan dengan waktu dunia/beat (misal aksi
+    // "morning" di dunia malam). Aksi tanpa kata waktu tidak pernah
+    // bertabrakan.
+    fun timeClashes(action: String, worldTime: String): Boolean {
+        val actionTime = timeWordOf(action) ?: return false
+        return actionTime != worldTime
+    }
+
     // Lensa makin panjang saat ketegangan naik (preseden 12 Angry Men:
     // 28mm -> 50mm -> 100mm sepanjang film).
     fun lensForTension(tension: Int): Int {
@@ -483,6 +534,21 @@ object ScriptEngine {
         ShotSize.MEDIUM
     )
 
+    // v1.4.1 — aksi netral per beat (tanpa kata waktu, tanpa lokasi
+    // spesifik): fallback kalau SEMUA aksi pool satu beat bertabrakan
+    // dengan waktu dunia (jarang; pool 8 aksi, yang berkala waktu cuma
+    // 1-2). Dipakai sebagai pengganti pool, bukan tambahan.
+    private val NEUTRAL_ACTIONS: List<String> = listOf(
+        "walks down the street, looking around",
+        "stops and looks at something in the distance",
+        "studies the surroundings and makes a plan",
+        "moves quickly through the street, testing his limits",
+        "pauses, realizing the cost of what he did",
+        "sinks down, defeated, as the street empties around him",
+        "rises slowly, fists clenched, eyes burning",
+        "walks on as the city wakes behind him"
+    )
+
     // "Kenapa shot ini" — 1 kalimat penjelasan dari tension/genre/durasi.
     fun directorNoteFor(beat: BeatDef, shotSize: ShotSize, lensMm: Int, move: CameraMove): String {
         val reason = when {
@@ -526,13 +592,33 @@ object ScriptEngine {
                 .replace("{P}", protagonist).replace("{A}", antagonist)
             val screenDirection = if (beatIdx % 2 == 0) "left to right" else "right to left"
             val axisSide = if (beatIdx % 2 == 0) "left" else "right"
-            val light = ScriptBeats.lightForTime(beat.timeOfDay)
+            // v1.4.1 — waktu dunia mengalahkan waktu beat (cahaya ikut
+            // dunia), dan aksi yang kata waktunya bertabrakan dengan
+            // waktu dunia di-skip. Kalau pool habis, aksi netral beat.
+            val worldTime = ScriptBeats.timeOfDayFromWorld(input.worldDescEn)
+            val effectiveTimeOfDay = worldTime ?: beat.timeOfDay
+            val light = ScriptBeats.lightForTime(effectiveTimeOfDay)
             val lens = ScriptBeats.lensForTension(beat.tension)
+            val filteredActions = actions.filter { action ->
+                !ScriptBeats.timeClashes(action, effectiveTimeOfDay)
+            }
+            // v1.4.1 — isi kembali pool sampai ukuran semula dengan aksi
+            // netral (supaya aturan "tidak ada aksi berulang dalam satu
+            // beat" tetap utuh walau 1-2 aksi terfilter).
+            val usableActions = run {
+                val filled = (filteredActions + NEUTRAL_ACTIONS.filter { it !in filteredActions })
+                    .take(actions.size)
+                if (filled.isEmpty()) {
+                    listOf(NEUTRAL_ACTIONS[beat.index % NEUTRAL_ACTIONS.size])
+                } else {
+                    filled
+                }
+            }
 
             for (clipIdx in 0 until clipCount) {
                 // Aksi BERBEDA tiap klip dalam satu beat (pool 8 aksi,
                 // maks 8 klip per beat) — tidak ada aksi yang mengulang.
-                val action = actions[(seed + clipIdx) % actions.size]
+                val action = usableActions[(seed + clipIdx) % usableActions.size]
                 // Ukuran shot: klip dialog dengan antagonis = TWO_SHOT
                 // (kecuali pola sudah TWO_SHOT — pakai CLOSEUP supaya
                 // tidak ada dua klip berurutan berukuran sama);
@@ -546,8 +632,17 @@ object ScriptEngine {
                     rawSize == ShotSize.TWO_SHOT && input.antagonist.isBlank() -> ShotSize.MEDIUM
                     else -> rawSize
                 }
-                val angle = if (shotSize == ShotSize.WIDE || shotSize == ShotSize.EXTREME_WIDE) {
-                    if (clipIdx % 2 == 0) CameraAngle.BIRD else CameraAngle.EYE
+                // v1.4.1 — BIRD hanya untuk dunia yang dilihat dari atas;
+                // dunia jalanan (kota/gang/pasar/bengkel) selalu EYE.
+                // Scene 01 tidak pernah BIRD (BIRD+STATIC+WIDE dilarang
+                // di pembuka: first-frame eye-level mengunci framing).
+                val angle = if (
+                    (shotSize == ShotSize.WIDE || shotSize == ShotSize.EXTREME_WIDE) &&
+                    clipIdx % 2 == 0 &&
+                    globalClipIndex > 0 &&
+                    ScriptBeats.worldSeenFromAbove(input.worldDescEn)
+                ) {
+                    CameraAngle.BIRD
                 } else {
                     CameraAngle.EYE
                 }
@@ -573,9 +668,9 @@ object ScriptEngine {
                     null
                 }
                 val slugline = if (dialogue != null) {
-                    "INT. $worldShort - ${beat.timeOfDay}"
+                    "INT. $worldShort - $effectiveTimeOfDay"
                 } else {
-                    "EXT. $worldShort - ${beat.timeOfDay}"
+                    "EXT. $worldShort - $effectiveTimeOfDay"
                 }
                 val transition = when {
                     globalClipIndex == 0 -> ""

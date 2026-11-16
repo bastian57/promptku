@@ -184,6 +184,8 @@ object PromptEngine {
     // terisi: kartu (~15 kata) tidak pernah kena cap DNA, jadi tidak ada
     // lagi pemangkasan diam-diam di subject. Karakter kedua tetap memakai
     // sisa anggaran DNA seperti biasa.
+    // v1.4.1 — kartu di subject line TANPA gestur (gestur pindah ke
+    // klausa terpisah, lihat gestureSentence).
     private fun subjectLineFor(
         input: ShotInput,
         dnaAllowed: Int,
@@ -192,7 +194,7 @@ object PromptEngine {
         val card = input.characterCard
         if (card != null && !card.isEmpty() && input.character != null) {
             val cardInput = input.copy(
-                character = input.character.copy(descriptionEn = card.toDescription())
+                character = input.character.copy(descriptionEn = card.subjectDescription())
             )
             return budgetedSubjectLine(cardInput, dnaAllowed, maxWords)
         }
@@ -202,11 +204,33 @@ object PromptEngine {
     private fun shortDna(input: ShotInput): String {
         val card = input.characterCard
         if (card != null && !card.isEmpty()) {
-            return "${input.character?.name ?: "a person"}, ${card.toDescription()}"
+            return "${input.character?.name ?: "a person"}, ${card.subjectDescription()}"
         }
         val dna = input.character?.descriptionEn ?: ""
         val words = dna.split(Regex("\\s+")).take(12).joinToString(" ")
         return "${input.character?.name ?: "a person"}, $words"
+    }
+
+    // v1.4.1 — default material mengikuti dunia, bukan selalu debu
+    // (cacat lapangan 16 Nov: "dust drifting" di 30/30 scene kota
+    // neon hujan).
+    fun materialDefaultFor(worldDescEn: String): String {
+        val lower = worldDescEn.lowercase()
+        return when {
+            lower.contains("rain") -> "rain streaks the air, mist drifts low over the wet ground"
+            lower.contains("snow") -> "snowflakes drift slowly through the cold air"
+            lower.contains("night") && lower.contains("city") -> "mist drifts through the neon light, rain on the wet ground"
+            lower.contains("sea") || lower.contains("beach") -> "sea spray drifts in the salty wind"
+            lower.contains("desert") -> "sand drifts slowly through the hot air"
+            else -> "dust drifts slowly through the air"
+        }
+    }
+
+    // v1.4.1 — gestur kartu sebagai klausa karakter terpisah (identitas,
+    // bukan pose saat ini). Null kalau kartu tidak punya gestur.
+    private fun gestureSentence(input: ShotInput): String? {
+        val gesture = input.characterCard?.gesture?.trim().orEmpty()
+        return if (gesture.isBlank()) null else "Signature gesture: $gesture."
     }
 
     private fun worldText(input: ShotInput): String {
@@ -327,6 +351,14 @@ object PromptEngine {
     // antar klip (aturan 180 derajat); transisi menandai sambungan antar shot.
     private fun continuityPhrase(input: ShotInput): String {
         val parts = mutableListOf<String>()
+        // v1.4.1 — rantai pose tinggal di klausa kontinuitas (bukan di
+        // timeline aksi): "Starts from X, ends as Y". Kalau pose awal =
+        // pose akhir, dilewati (pose statis, aksi yang bicara).
+        val start = input.poseStart.trim()
+        val end = input.poseEnd.trim()
+        if (start.isNotBlank() && end.isNotBlank() && start != end) {
+            parts.add("Starts from $start, ends as $end")
+        }
         if (input.screenDirection.isNotBlank()) {
             parts.add("Screen direction: ${input.screenDirection.trim()}")
         }
@@ -393,8 +425,9 @@ object PromptEngine {
     }
 
     // Flow / Veo — kamera ditulis PERTAMA, dua beat timestamp, audio di baris sendiri.
-    // Aksi TIDAK diulang mentah di beat kedua (cukup "The action completes")
-    // supaya anggaran 200 kata cukup untuk DNA verbatim dua karakter.
+    // v1.4.1 — timeline HANYA aksi ("[00:00-00:05] $action."), pose
+    // pindah ke klausa kontinuitas ("Starts from X, ends as Y"); aksi
+    // TIDAK diulang mentah di beat kedua ("Ends as $poseEnd.").
     private fun buildFlow(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style)
@@ -404,9 +437,8 @@ object PromptEngine {
         val camera = input.cameraMove?.phraseEn ?: "static locked camera"
         val light = input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
-        val poseStart = input.poseStart.ifBlank { "standing still" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
-        val material = input.materialEn.ifBlank { "dust drifting slowly through the air" }
+        val material = input.materialEn.ifBlank { materialDefaultFor(worldText(input)) }
         val audio = input.audioEn.ifBlank { "wind, quiet ambience" }
         val hide = if (input.hideTactic != HideTactic.NONE) {
             " ${input.hideTactic.phraseEn}."
@@ -414,6 +446,7 @@ object PromptEngine {
             ""
         }
         val continuity = continuityPhrase(input)
+        val gesture = gestureSentence(input)
         // Anggaran DNA v1.2.1 (bug Riko): hitung kata di luar DNA dulu, sisa
         // anggaran untuk DNA. Lantai 25 kata menjaga 1-2 kalimat pertama DNA
         // (ciri wajah paling penting) tetap ada; kalau dunia/aksi juga
@@ -423,11 +456,12 @@ object PromptEngine {
         val otherWords = MythFilter.countWords(
             listOf(
                 s1WithoutDna,
-                "[00:00-00:05] $poseStart, $action begins.",
+                "[00:00-00:05] $action.",
                 "$material.",
-                "[00:05-00:10] The action completes as $poseEnd. ${look.second}, ${look.third}.",
+                "[00:05-00:10] Ends as $poseEnd. ${look.second}, ${look.third}.",
                 "Audio: $audio.${dialogueFlow(input)}",
                 continuity,
+                gesture ?: "",
                 FLOW_POSITIVE_LOCK
             ).joinToString(" ")
         )
@@ -440,7 +474,7 @@ object PromptEngine {
                 dropPriority = 0
             ),
             Sentence(
-                "[00:00-00:05] $poseStart, $action begins.",
+                "[00:00-00:05] $action.",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -450,7 +484,7 @@ object PromptEngine {
                 dropPriority = 3
             ),
             Sentence(
-                "[00:05-00:10] The action completes as $poseEnd. ${look.second}, ${look.third}.",
+                "[00:05-00:10] Ends as $poseEnd. ${look.second}, ${look.third}.",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -461,6 +495,10 @@ object PromptEngine {
             )
         ) + if (continuity.isNotBlank()) {
             listOf(Sentence("$continuity.", mandatory = false, dropPriority = 4))
+        } else {
+            emptyList()
+        } + if (gesture != null) {
+            listOf(Sentence(gesture, mandatory = false, dropPriority = 5))
         } else {
             emptyList()
         }
@@ -485,6 +523,8 @@ object PromptEngine {
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
         val raw = StringBuilder()
         raw.append("${shortDna(input)} in ${worldText(input)}. ")
+        // v1.4.1 — gestur kartu sebagai klausa terpisah (bukan di subject).
+        gestureSentence(input)?.let { raw.append("$it ") }
         raw.append("$poseStart, then $action, ending $poseEnd. ")
         raw.append("$camera. Lit with $light. ${look.first}. ${look.second}.")
         val continuity = continuityPhrase(input)
@@ -493,8 +533,11 @@ object PromptEngine {
         }
         var text = MythFilter.filterMyths(raw.toString())
         if (MythFilter.countWords(text) < 80) {
-            val extra = " ${input.materialEn.ifBlank { "Dust drifts slowly, debris settles, the ground stays cracked underfoot." }} " +
-                "The same character design stays consistent in every frame."
+            // v1.4.1 — material mengikuti dunia (bukan selalu debu).
+            val mat = input.materialEn.ifBlank {
+                materialDefaultFor(worldText(input)).replaceFirstChar { it.titlecase() }
+            }
+            val extra = " $mat. The same character design stays consistent in every frame."
             text = MythFilter.filterMyths(text + extra)
         }
         return finish(
@@ -515,10 +558,11 @@ object PromptEngine {
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
         val poseStart = input.poseStart.ifBlank { "standing still" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
-        val material = input.materialEn.ifBlank { "dust drifts slowly through the air" }
+        val material = input.materialEn.ifBlank { materialDefaultFor(worldText(input)) }
         val audio = input.audioEn.ifBlank { "wind, quiet ambience" }
         val secondName = input.secondCharacter?.let { ", facing ${it.name}" } ?: ""
         val continuity = continuityPhrase(input)
+        val gesture = gestureSentence(input)
         val sentences = listOf(
             Sentence(
                 "${shortDna(input)}$secondName, in ${shortWorld(input)}.",
@@ -547,6 +591,10 @@ object PromptEngine {
             listOf(Sentence("$continuity.", mandatory = false, dropPriority = 4))
         } else {
             emptyList()
+        } + if (gesture != null) {
+            listOf(Sentence(gesture, mandatory = false, dropPriority = 5))
+        } else {
+            emptyList()
         }
         val raw = assembleOrdered(sentences, POSITIVE_LOCK_SHORT, TargetEngine.KLING.maxWords)
         return finish(
@@ -567,11 +615,12 @@ object PromptEngine {
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
         val poseStart = input.poseStart.ifBlank { "standing still" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
-        val material = input.materialEn.ifBlank { "dust drifts slowly through the air" }
+        val material = input.materialEn.ifBlank { materialDefaultFor(worldText(input)) }
         val audio = input.audioEn.ifBlank { "wind, quiet ambience" }
         val secondName = input.secondCharacter?.let { ", facing ${it.name}" } ?: ""
         val tail = "Constraints: one action only, one camera move only, no text on screen, " +
             "consistent character design, no extra limbs."
+        val gesture = gestureSentence(input)
         val sentences = listOf(
             Sentence(
                 "${shortDna(input)}$secondName. ${look.first}.",
@@ -590,13 +639,17 @@ object PromptEngine {
                 dropPriority = 0
             ),
             Sentence(
-                "[4-6s] The action completes as $poseEnd. Audio: $audio.",
+                "[4-6s] Ends as $poseEnd. Audio: $audio.",
                 mandatory = true,
                 dropPriority = 0
             ),
             Sentence("$material.", mandatory = false, dropPriority = 3)
         ) + if (continuityPhrase(input).isNotBlank()) {
             listOf(Sentence("${continuityPhrase(input)}.", mandatory = false, dropPriority = 4))
+        } else {
+            emptyList()
+        } + if (gesture != null) {
+            listOf(Sentence(gesture, mandatory = false, dropPriority = 5))
         } else {
             emptyList()
         }

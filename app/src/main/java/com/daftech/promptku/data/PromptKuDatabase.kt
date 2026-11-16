@@ -159,7 +159,10 @@ data class ScriptItem(
     val cardTrait: String? = null,
     val cardGesture: String? = null,
     val cardObject: String? = null,
-    val cardFace: String? = null
+    val cardFace: String? = null,
+    // v1.4.1 — ambience Mode Cepat (sebelumnya hanya in-memory, hilang
+    // saat naskah dimuat ulang dari DB — cacat lapangan 16 Nov).
+    val ambienceEn: String = ""
 )
 
 @Entity(
@@ -409,6 +412,14 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
     }
 }
 
+// v1.4.1 — Room v4 -> v5: ambienceEn Mode Cepat ikut tersimpan di
+// tabel scripts (1 ALTER aditif; baris lama aman, default '').
+val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE scripts ADD COLUMN ambienceEn TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 // Konversi ScriptItem <-> ScriptInput (enum dibaca dengan runCatching).
 fun ScriptItem.toScriptInput(): ScriptInput {
     val card = if (
@@ -441,6 +452,7 @@ fun ScriptItem.toScriptInput(): ScriptInput {
         style = runCatching { VisualStyle.valueOf(style) }.getOrDefault(VisualStyle.REALISTIC),
         engine = runCatching { TargetEngine.valueOf(engine) }.getOrDefault(TargetEngine.FLOW),
         dialogueLang = runCatching { DialogueLang.valueOf(dialogueLang) }.getOrDefault(DialogueLang.EN),
+        ambienceEn = ambienceEn,
         characterCard = card
     )
 }
@@ -468,7 +480,8 @@ fun ScriptInput.toScriptItem(status: String = "DRAFT"): ScriptItem {
         cardTrait = characterCard?.trait?.ifBlank { null },
         cardGesture = characterCard?.gesture?.ifBlank { null },
         cardObject = characterCard?.objectProp?.ifBlank { null },
-        cardFace = characterCard?.faceAnchor?.ifBlank { null }
+        cardFace = characterCard?.faceAnchor?.ifBlank { null },
+        ambienceEn = ambienceEn
     )
 }
 
@@ -559,7 +572,7 @@ fun ScriptSceneItem.toDraftScene(): DraftScene {
         HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class,
         ScriptItem::class, ScriptSceneItem::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class PromptKuDatabase : RoomDatabase() {
@@ -578,7 +591,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
                     context.applicationContext,
                     PromptKuDatabase::class.java,
                     "promptku.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
         }
     }

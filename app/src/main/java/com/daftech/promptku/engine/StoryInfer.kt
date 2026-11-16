@@ -15,7 +15,10 @@ object StoryInfer {
         val emotion: String,
         val style: VisualStyle,
         val ambienceEn: String,
-        val characterCard: CharacterCard
+        val characterCard: CharacterCard,
+        // v1.4.1 — antagonis + deskripsinya (kosong = tidak ada).
+        val antagonist: String = "",
+        val antagonistDescEn: String = ""
     )
 
     // Contoh 1 ketukan — ketuk untuk mengisi kalimat.
@@ -236,6 +239,54 @@ object StoryInfer {
     }
 
     // Tebak genre + dunia dari 1 kalimat. Lokasi menimpa dunia default.
+    // v1.4.1 — antagonis dari kalimat (cacat lapangan 16 Nov: "raksasa
+    // 2,8 meter" hilang, pool menulis cerita kurir + chip). Ukuran
+    // raksasa dibaca dari angka di kalimat ("2,8 meter" -> "2.8-meter-tall").
+    private fun giantSize(lower: String): String {
+        val match = Regex("""(\d+)[,.](\d+)\s*m""").find(lower)
+        return if (match != null) {
+            "${match.groupValues[1]}.${match.groupValues[2]}-meter-tall "
+        } else {
+            ""
+        }
+    }
+
+    fun extractAntagonist(lower: String): Pair<String, String> {
+        return when {
+            lower.contains("raksasa") || lower.contains("giant") ->
+                "Raksasa" to "${giantSize(lower)}giant, massive arms, cracked stone skin, heavy iron boots"
+            lower.contains("naga") || lower.contains("dragon") ->
+                "Naga" to "a great dragon, dark scales, glowing eyes, huge wings"
+            lower.contains("kuntilanak") ->
+                "Kuntilanak" to "a pale ghost woman in a white dress, long black hair covering her face"
+            lower.contains("pocong") ->
+                "Pocong" to "a wrapped figure in a white shroud, hopping slowly, pale face"
+            lower.contains("musuh") || lower.contains("penjahat") || lower.contains("villain") ->
+                "Penjahat" to "a ruthless villain, dark coat, cold eyes, scarred cheek"
+            else -> "" to ""
+        }
+    }
+
+    // v1.4.1 — modifier dunia dari kalimat ("langit kota yang sudah
+    // hancur" -> dunia + "high above" + "ruined"). Modifier ditempel
+    // di belakang deskripsi dunia hasil lokasi/genre.
+    fun worldModifiers(lower: String): List<String> {
+        val mods = mutableListOf<String>()
+        if (lower.contains("langit") || lower.contains("sky")) {
+            // v1.4.1 — sengaja TANPA frasa "high above": modifier langit
+            // tidak boleh menyalakan angle BIRD (dunia dasar tetap
+            // jalanan kota; BIRD+STATIC+WIDE dilarang di scene 01).
+            mods.add("in the sky, clouds drifting below")
+        }
+        if (lower.contains("hancur") || lower.contains("runtuh") || lower.contains("ruin")) {
+            mods.add("ruined, broken and collapsed, smoke rising in the distance")
+        }
+        if (lower.contains("hujan") || lower.contains("rain")) {
+            mods.add("rain falling on the wet streets")
+        }
+        return mods
+    }
+
     fun infer(sentence: String): Inference {
         val lower = " " + sentence.lowercase() + " "
         val matched = RULES.firstOrNull { (_, rule) ->
@@ -246,14 +297,24 @@ object StoryInfer {
         val location = LOCATIONS.firstOrNull { (keywords, _, _) ->
             keywords.any { keyword -> lower.contains(keyword) }
         }
+        val (antagonist, antagonistDescEn) = extractAntagonist(lower)
+        val modifiers = worldModifiers(lower)
+        val baseWorld = location?.third ?: rule.worldDescEn
+        val worldDesc = if (modifiers.isEmpty()) {
+            baseWorld
+        } else {
+            "$baseWorld, ${modifiers.joinToString(", ")}"
+        }
         return Inference(
             genre = genre,
             worldName = location?.second ?: rule.worldName,
-            worldDescEn = location?.third ?: rule.worldDescEn,
+            worldDescEn = worldDesc,
             emotion = rule.emotion,
             style = rule.style,
             ambienceEn = rule.ambienceEn,
-            characterCard = rule.card
+            characterCard = rule.card,
+            antagonist = antagonist,
+            antagonistDescEn = antagonistDescEn
         )
     }
 
@@ -273,11 +334,14 @@ object StoryInfer {
             emotion = inference.emotion,
             protagonistName = hero,
             protagonistDescEn = "a young Indonesian man in his thirties, worn jacket, determined eyes",
+            antagonist = inference.antagonist,
+            antagonistDescEn = inference.antagonistDescEn,
             worldName = inference.worldName,
             worldDescEn = inference.worldDescEn,
             conflict = sentence.trim(),
             style = inference.style,
             engine = TargetEngine.FLOW,
+            ambienceEn = inference.ambienceEn,
             characterCard = inference.characterCard
         )
     }
