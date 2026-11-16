@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,10 +33,15 @@ import com.daftech.promptku.engine.V2Provider
 fun V2KeysScreen(v2: V2ViewModel) {
     var gemini by remember { mutableStateOf("") }
     var groq by remember { mutableStateOf("") }
-    var geminiModel by remember { mutableStateOf(com.daftech.promptku.engine.LlmClients.MODEL_DIRECTOR_GEMINI) }
-    var groqModel by remember { mutableStateOf(com.daftech.promptku.engine.LlmClients.MODEL_DIRECTOR_GROQ) }
+    // v2.0 fix3 — isi awal = model tersimpan (sebelumnya selalu default,
+    // jadi editan lama tidak pernah kelihatan lagi saat layar dibuka).
+    var geminiModel by remember { mutableStateOf(v2.storedGeminiModel) }
+    var groqModel by remember { mutableStateOf(v2.storedGroqModel) }
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        // v2.0 fix3 — layar HARUS bisa di-scroll: sebelumnya Column polos,
+        // konten lebih tinggi dari layar, pesan "Kunci disimpan" jatuh di
+        // bawah lipatan dan tidak pernah terlihat (laporan lapangan 16 Nov).
+        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Kunci API (BYOK)")
@@ -79,13 +86,24 @@ fun V2KeysScreen(v2: V2ViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
         Button(
-            onClick = { v2.updateKeys(gemini, groq) },
+            onClick = {
+                v2.updateKeys(gemini, groq)
+                // v2.0 fix3 — model ikut disimpan (sebelumnya field model
+                // tidak pernah ditulis ke mana pun).
+                v2.updateModels(geminiModel, groqModel)
+                // Kosongkan field kunci: placeholder "•••• terisi" muncul =
+                // bukti visual kunci tersimpan.
+                gemini = ""
+                groq = ""
+            },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Simpan Kunci") }
-        Text("Kosongkan field = biarkan kunci lama (nilai kunci tidak pernah ditampilkan).")
+        // v2.0 fix3 — pesan status TEPAT di bawah tombol (sebelumnya di
+        // bawah hint, di luar layar): tap Simpan langsung kelihatan.
         if (v2.statusMessage.isNotBlank()) {
             Text(v2.statusMessage)
         }
+        Text("Kosongkan field = biarkan kunci lama (nilai kunci tidak pernah ditampilkan).")
         Spacer(Modifier.height(8.dp))
         Text("Kuota hari ini (sisa):")
         V2Provider.values().forEach { provider ->

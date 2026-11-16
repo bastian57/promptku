@@ -222,20 +222,25 @@ object LlmClients {
         return V2Call.Ok(stripCodeFences(text), provider)
     }
 
-    /** Satu panggilan ke provider v2.0 mana pun (dipakai rantai fallback). */
+    /** Satu panggilan ke provider v2.0 mana pun (dipakai rantai fallback).
+     *  Model Director bisa di-override dari tab Kunci (fix3); default =
+     *  konstanta. Model custom Gemini tetap dihitung kuotanya sebagai
+     *  GEMINI_FLASH (lihat generateGemini). */
     fun callProvider(
         transport: HttpTransport,
         provider: V2Provider,
         geminiKey: String,
         groqKey: String,
         prompt: String,
-        imagesBase64: List<String> = emptyList()
+        imagesBase64: List<String> = emptyList(),
+        geminiModel: String = MODEL_DIRECTOR_GEMINI,
+        groqModel: String = MODEL_DIRECTOR_GROQ
     ): V2Call {
         return when (provider) {
-            V2Provider.GEMINI_FLASH -> generateGemini(transport, geminiKey, MODEL_DIRECTOR_GEMINI, prompt, imagesBase64)
+            V2Provider.GEMINI_FLASH -> generateGemini(transport, geminiKey, geminiModel, prompt, imagesBase64)
             V2Provider.GEMINI_FLASH_LITE -> generateGemini(transport, geminiKey, MODEL_DIRECTOR_GEMINI_LITE, prompt, imagesBase64)
             V2Provider.GROQ_GPT_OSS -> chatGroq(
-                transport, groqKey, MODEL_DIRECTOR_GROQ,
+                transport, groqKey, groqModel,
                 listOf(ChatMsg("user", prompt)), jsonMode = true, maxTokens = 6000
             )
             V2Provider.GROQ_VISION -> chatGroq(

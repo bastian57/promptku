@@ -97,4 +97,37 @@ class LlmClientsTest {
         assertTrue(result is V2Call.Ok)
         assertEquals(V2Provider.GROQ_VISION, (result as V2Call.Ok).provider)
     }
+
+    // v2.0 fix3 — model Director dari tab Kunci WAJIB dipakai, bukan
+    // konstanta hardcode (sebelumnya field model di layar Kunci mati).
+    @Test
+    fun callProviderUsesCustomGeminiModel() {
+        var seenUrl = ""
+        val transport = HttpTransport { url, _, _ ->
+            seenUrl = url
+            HttpResult(200, geminiOkBody)
+        }
+        val result = LlmClients.callProvider(
+            transport, V2Provider.GEMINI_FLASH, "AIza_test", "gsk_test", "hi",
+            geminiModel = "gemini-2.0-flash"
+        )
+        assertTrue(result is V2Call.Ok)
+        assertTrue(seenUrl.contains("gemini-2.0-flash"))
+        assertEquals(V2Provider.GEMINI_FLASH, (result as V2Call.Ok).provider)
+    }
+
+    @Test
+    fun callProviderUsesCustomGroqModel() {
+        var seenBody = ""
+        val transport = HttpTransport { _, _, body ->
+            seenBody = body
+            HttpResult(200, groqOkBody)
+        }
+        val result = LlmClients.callProvider(
+            transport, V2Provider.GROQ_GPT_OSS, "AIza_test", "gsk_test", "hi",
+            groqModel = "llama-3.3-70b-versatile"
+        )
+        assertTrue(result is V2Call.Ok)
+        assertTrue(seenBody.contains("llama-3.3-70b-versatile"))
+    }
 }

@@ -10,6 +10,10 @@ class V2Pipeline(
     private val transport: HttpTransport,
     private val geminiKey: String,
     private val groqKey: String,
+    // v2.0 fix3 — model Director dari tab Kunci (default = konstanta).
+    // GEMINI_FLASH_LITE tetap konstanta (model hemat, bukan editan user).
+    private val geminiModel: String = LlmClients.MODEL_DIRECTOR_GEMINI,
+    private val groqModel: String = LlmClients.MODEL_DIRECTOR_GROQ,
     private val onCall: (V2Provider) -> Unit = {}
 ) {
 
@@ -23,7 +27,7 @@ class V2Pipeline(
         for (provider in chain) {
             val result = LlmClients.callProvider(
                 transport, provider, geminiKey, groqKey,
-                buildPrompt(provider), images
+                buildPrompt(provider), images, geminiModel, groqModel
             )
             when (result) {
                 is V2Call.Ok -> {

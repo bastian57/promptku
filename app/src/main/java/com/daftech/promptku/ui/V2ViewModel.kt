@@ -132,10 +132,24 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         statusMessage = "Kunci disimpan (terenkripsi: ${if (keyStore.isEncrypted) "ya" else "TIDAK — peringatan, KeyStore bermasalah"})."
     }
 
+    // Model Director tersimpan (dipakai pipeline; default = konstanta
+    // LlmClients). v2.0 fix3 — sebelumnya field model di layar Kunci
+    // tidak pernah ditulis ke mana pun (tombol Simpan cuma memanggil
+    // updateKeys) dan pipeline memakai konstanta hardcode.
+    val storedGeminiModel: String get() = keyStore.geminiModelId
+    val storedGroqModel: String get() = keyStore.groqModelId
+
+    fun updateModels(geminiModel: String, groqModel: String) {
+        keyStore.geminiModelId = geminiModel
+        keyStore.groqModelId = groqModel
+    }
+
     private fun pipeline(): V2Pipeline = V2Pipeline(
         transport = LlmTransportOkHttp(),
         geminiKey = keyStore.geminiApiKey,
         groqKey = keyStore.groqApiKey,
+        geminiModel = keyStore.geminiModelId,
+        groqModel = keyStore.groqModelId,
         onCall = { provider -> keyStore.recordCall(provider, today()) }
     )
 
