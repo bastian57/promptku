@@ -671,9 +671,11 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         .filter { it.id != "G4" && it.id != "G6" }
                         .flatMap { it.failures }
                         .mapNotNull { failure ->
-                            Regex("Scene (\\d+): (.*)").find(failure)?.let {
-                                it.groupValues[1].toIntOrNull() to it.groupValues[2]
-                            }
+                            val m = Regex("Scene (\\d+): (.*)").find(failure)
+                                ?: return@mapNotNull null
+                            val num = m.groupValues[1].toIntOrNull()
+                                ?: return@mapNotNull null
+                            num to m.groupValues[2]
                         }
                         .groupBy({ it.first }, { it.second })
                         .mapValues { it.value.joinToString("; ") }
