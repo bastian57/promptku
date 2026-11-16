@@ -283,6 +283,12 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Draft offline rule-based (Mode Manual) — tanpa LLM, dilabel jelas. */
     fun offlineDraft(trimmedIdea: String = idea.trim()) {
+        if (trimmedIdea.isBlank()) {
+            // Tanpa ide, StoryInfer jatuh ke default template v1 (Raka /
+            // DRAMA / Jalanan Jakarta) — itu yang tampil sebagai "prompt lama".
+            statusMessage = "Tulis dulu ide singkat filmnya (1–3 kalimat)."
+            return
+        }
         viewModelScope.launch {
             busy = true
             progress = "Membuat draft offline (mesin lama, tanpa AI)..."

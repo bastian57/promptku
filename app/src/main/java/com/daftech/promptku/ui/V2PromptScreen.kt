@@ -1,5 +1,6 @@
 package com.daftech.promptku.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,10 @@ import com.daftech.promptku.engine.TargetEngine
 // Layar 3 v2.0 — Semua prompt scene + hasil 6 gerbang + export.
 @Composable
 fun V2PromptScreen(v2: V2ViewModel) {
+    // Tombol back sistem: kembali ke Layar Ide (bukan keluar aplikasi).
+    // Tanpa ini, layar prompt adalah jalan buntu — satu-satunya jalan
+    // keluar adalah menutup paksa aplikasi.
+    BackHandler { v2.updateStep(V2Step.IDEA) }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var engineIndex by remember { mutableIntStateOf(0) }
@@ -49,6 +54,12 @@ fun V2PromptScreen(v2: V2ViewModel) {
                     Text("DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")
                 }
             }
+        }
+        item {
+            OutlinedButton(
+                onClick = { v2.updateStep(V2Step.IDEA) },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Kembali ke Ide") }
         }
         if (v2.gates.isNotEmpty()) {
             item {

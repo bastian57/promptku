@@ -1,5 +1,6 @@
 package com.daftech.promptku.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 // Layar 2 v2.0 — Cerita hasil Director + chip konfirmasi + revisi.
 @Composable
 fun V2StoryScreen(v2: V2ViewModel) {
+    BackHandler { v2.updateStep(V2Step.IDEA) }
     val bible = v2.bible
     var revision by remember { mutableStateOf("") }
     LazyColumn(
