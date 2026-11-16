@@ -408,11 +408,17 @@ object ScriptPools {
     // (isCourierStory), atau lewat template "Kurir Terakhir" di wizard.
     // Default Action baru = pool netral di actionsFor (tanpa kurir/chip).
     fun isCourierStory(synopsis: String): Boolean {
-        val lower = " " + synopsis.lowercase() + " "
-        return listOf(
-            "kurir", "paket", "antar", "pengiriman", "delivery", "chip",
-            "ojek", "ojol", "kiriman"
-        ).any { lower.contains(it) }
+        // v2.0 — pencocokan TOKEN: "antar" sebagai kata utuh saja.
+        // Substring lama menelan "Ant**antar**tika" jadi cerita kurir
+        // (audit Antartika 16 Nov 2026). "antar" sebagai token ("jasa
+        // antar paket") tetap sinyal kurir yang sah.
+        return TokenBoundary.containsAnyToken(
+            synopsis,
+            listOf(
+                "kurir", "paket", "antar", "pengiriman", "delivery", "chip",
+                "ojek", "ojol", "kiriman"
+            )
+        )
     }
 
     fun courierActionsFor(beatIndex: Int): List<String> {

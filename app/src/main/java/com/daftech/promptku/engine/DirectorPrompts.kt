@@ -1,0 +1,126 @@
+package com.daftech.promptku.engine
+
+// Prompt LLM v2.0 — instruksi untuk tiga peran. Bahasa instruksi:
+// Inggris (model bekerja paling konsisten), input ide user: Indonesia.
+// Semua jawaban WAJIB JSON murni (tanpa markdown fence) supaya bisa
+// diparse JsonLite tanpa perbaikan heuristik yang rapuh.
+// Aturan keras di semua peran: JANGAN pernah menulis nama franchise,
+// film, kartun, atau tokoh berhak cipta sebagai identitas karakter —
+// deskripsikan HANYA dari ciri visual yang terlihat.
+
+object DirectorPrompts {
+
+    const val VISION_SYSTEM: String = "You are a senior visual describer for film pre-production. " +
+        "Describe ONLY what is visible in the image. Never name a franchise, movie, cartoon or " +
+        "real celebrity. Give three short visual anchors (12-15 words total) that keep the same " +
+        "person/place recognizable across shots. Reply with JSON only, no markdown, no extra text."
+
+    fun visionUser(label: String): String = "Describe this reference image (label: \"$label\") " +
+        "as JSON: {\"label\": \"$label\", \"subject_name\": \"short name, e.g. Bejo\", " +
+        "\"anchors_en\": [\"anchor 1\", \"anchor 2\", \"anchor 3\"], " +
+        "\"setting_en\": \"where this is, one sentence\", " +
+        "\"palette_en\": \"dominant colours and light, one short phrase\", " +
+        "\"notes_en\": \"anything else visible that matters for continuity\"}. " +
+        "Anchors must be concrete and visible (clothing, face, hair, build, props). " +
+        "If the image shows a place, not a person, set subject_name to the place name."
+
+    const val DIRECTOR_SYSTEM: String = "You are a senior film director (20 years, Indonesian " +
+        "cinema). You expand a one-line idea into a complete story bible for a short film. " +
+        "Write in English for all prompt fields; keep Indonesian dialogue lines in Indonesian " +
+        "only where a dialogue_id field asks for it. One emotion per scene. Every scene must " +
+        "have WANT + OBSTACLE + TURN. Never invent a franchise character. Reply with JSON only, " +
+        "no markdown, no extra text."
+
+    /** Bible JSON. [idea] = ide user (Indonesia). [vision] = deskripsi gambar (boleh kosong). */
+    fun directorUser(
+        idea: String,
+        durationMinutes: Int,
+        vision: List<V2VisionDesc>,
+        isCourierHint: Boolean
+    ): String {
+        val visionBlock = if (vision.isEmpty()) {
+            "No reference images. Invent the hero and world from the idea, with concrete visual anchors."
+        } else {
+            "Reference images (use their anchors verbatim for the matching characters/world):\n" +
+                vision.joinToString("\n") { v ->
+                    "- ${v.label}: ${v.subjectName}; anchors: ${v.anchorsEn.joinToString("; ")}; " +
+                        "setting: ${v.settingEn}; palette: ${v.paletteEn}"
+                }
+        }
+        return "Idea (Indonesian): \"$idea\"\n" +
+            "Duration: $durationMinutes minutes. One scene = one 10-second clip, " +
+            "${durationMinutes * 6} scenes total, flat list, no nested shots.\n" +
+            "$visionBlock\n" +
+            "Courier-story hint from a keyword check: is_courier=$isCourierHint " +
+            "(true ONLY if the idea is really about a courier/delivery; correct it if wrong).\n" +
+            "Reply with this exact JSON shape:\n" +
+            "{\"title\": \"...\", \"logline\": \"one sentence\", \"genre\": \"ACTION|DRAMA|ROMANSA|HOROR|SCI_FI|FANTASI|THRILLER|KOMEDI|DOKUMENTER|SEJARAH\", " +
+            "\"characters\": [{\"name\": \"...\", \"anchors_en\": [\"a\", \"b\", \"c\"], \"look_en\": \"...\", \"outfit_en\": \"...\"}], " +
+            "\"antagonist_name\": \"...\", \"antagonist_desc_en\": \"...\", " +
+            "\"world_name\": \"...\", \"world_desc_en\": \"one vivid paragraph, concrete nouns only\", " +
+            "\"light_en\": \"...\", \"ambience_en\": \"...\", " +
+            "\"beats\": [{\"index\": 0, \"name\": \"Pembuka\", \"summary_en\": \"...\"}], " +
+            "\"episodes\": [{\"number\": 1, \"title\": \"...\", \"logline\": \"...\", \"scene_count\": 6}], " +
+            "\"duration_minutes\": $durationMinutes, \"is_courier\": $isCourierHint, \"source_idea\": \"$idea\"}\n" +
+            "Beats: 5 for films up to 3 minutes (Pembuka/Pemicu/Eskalasi/Klimaks/Penutup), " +
+            "8 for longer (Story Circle). Episodes: 1 if the film is short; split into episodes " +
+            "only if the story is long, each episode one arc chapter with its scene_count summing " +
+            "to ${durationMinutes * 6}. The climax must fall the antagonist; the closing beat is " +
+            "aftermath, no big fight after the climax."
+    }
+
+    fun revisionUser(bible: StoryBible, instruction: String): String =
+        "Revise this story bible according to the user instruction, keeping everything else " +
+            "identical (same characters, world, ambience wording). Reply with the FULL bible JSON " +
+            "in the same shape as before.\n" +
+            "Current bible: ${JsonLite.stringify(V2Models.bibleToJson(bible))}\n" +
+            "User instruction (Indonesian): \"$instruction\""
+
+    const val PROMPTER_SYSTEM: String = "You are a senior AI-video prompter. You turn a story " +
+        "bible into per-scene action plans for text-to-video generation (Google Flow/Veo, Kling, " +
+        "Seedance, Wan). Each scene is ONE 10-second clip. Write action_en as concrete visible " +
+        "movement (subject + verb + object, no camera words inside action). Camera in camera_move " +
+        "only (one move per clip). Dialogue at most 8 words, one speaker per clip, at most 2 " +
+        "words per second. Never describe the hero's full appearance — the app pastes the " +
+        "character card itself. Never name a franchise character. Reply with JSON only, " +
+        "no markdown, no extra text."
+
+    /** Satu batch scene. [sceneNumbers] = nomor scene yang diminta (1-based). */
+    fun prompterUser(
+        bible: StoryBible,
+        sceneNumbers: List<Int>,
+        previousExit: String
+    ): String {
+        val hero = bible.hero
+        val heroBlock = if (hero == null) "No hero defined."
+        else "Hero: ${hero.name} (anchors: ${hero.anchorsEn.joinToString("; ")}). " +
+            "Do NOT redescribe the hero in action_en — write only what he/she DOES."
+        val antagonistBlock = if (bible.antagonistName.isBlank()) "" else
+            "Antagonist: ${bible.antagonistName} — ${bible.antagonistDescEn}."
+        val beatsBlock = bible.beats.joinToString("\n") { b ->
+            "- beat ${b.index} ${b.name}: ${b.summaryEn}"
+        }
+        return "Story bible:\n" +
+            "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
+            "$heroBlock\n$antagonistBlock\n" +
+            "World (use these exact words in every scene's context, the app enforces it): " +
+            "${bible.worldDescEn}. Light: ${bible.lightEn}. Ambience: ${bible.ambienceEn}.\n" +
+            "Beats:\n$beatsBlock\n" +
+            "Previous scene exit state (continuity — this scene's entry must match it): " +
+            "$previousExit\n" +
+            "Write scene plans for scene numbers ${sceneNumbers.joinToString(", ")} as a JSON ARRAY " +
+            "of objects, one per scene, in order:\n" +
+            "[{\"scene_number\": 1, \"action_en\": \"...\", " +
+            "\"camera_move\": \"static|slow dolly-in|slow pan left|slow pan right|tracking shot|crane up|handheld\", " +
+            "\"lens_mm\": 35, \"shot_size\": \"wide|medium|close-up|extreme close-up\", " +
+            "\"angle\": \"eye|low|high|bird\", " +
+            "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty)\", " +
+            "\"dialogue_en\": \"... (English version of the same line, or empty)\", " +
+            "\"audio_en\": \"sound effects + ambience for this clip\", " +
+            "\"effect_id\": \"\" (leave empty — the app assigns effects from its internal vocabulary), " +
+            "\"want_en\": \"...\", \"obstacle_en\": \"...\", \"transition_en\": \"...\"}]\n" +
+            "Rules: fight moves must be DIFFERENT in every scene of the film (never repeat a " +
+            "punch/kick/grapple verbatim); the closing scene is aftermath, no big fight; " +
+            "dialogue only in scenes where the beat needs it (most scenes: empty dialogue)."
+    }
+}

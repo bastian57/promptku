@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
@@ -38,24 +39,31 @@ import com.daftech.promptku.ui.PromptKuViewModel
 import com.daftech.promptku.ui.QuickScreen
 import com.daftech.promptku.ui.ScriptScreen
 import com.daftech.promptku.ui.TemplateScreen
+import com.daftech.promptku.ui.V2IdeaScreen
+import com.daftech.promptku.ui.V2KeysScreen
+import com.daftech.promptku.ui.V2PromptScreen
+import com.daftech.promptku.ui.V2Step
+import com.daftech.promptku.ui.V2StoryScreen
+import com.daftech.promptku.ui.V2ViewModel
 import com.daftech.promptku.ui.WizardScreen
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: PromptKuViewModel by viewModels()
+    private val v2ViewModel: V2ViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             PromptKuTheme {
-                PromptKuApp(viewModel = viewModel)
+                PromptKuApp(viewModel = viewModel, v2ViewModel = v2ViewModel)
             }
         }
     }
 }
 
 @Composable
-fun PromptKuApp(viewModel: PromptKuViewModel) {
+fun PromptKuApp(viewModel: PromptKuViewModel, v2ViewModel: V2ViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     // Mode Cepat v1.4 = layar pertama tab Buat; false = wizard Mode Detail.
     var quickMode by remember { mutableStateOf(true) }
@@ -69,8 +77,10 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
         }
     }
 
-    val tabs = listOf("Buat", "Template", "Proyek", "Naskah", "DNA", "Riwayat", "Efek")
+    // v2.0 — tab "Cerita" (alur baru) di index 0; tab lama geser +1.
+    val tabs = listOf("Cerita", "Buat", "Template", "Proyek", "Naskah", "DNA", "Riwayat", "Efek")
     val icons = listOf(
+        Icons.Filled.MenuBook,
         Icons.Filled.Create,
         Icons.Filled.Movie,
         Icons.Filled.Folder,
@@ -99,43 +109,49 @@ fun PromptKuApp(viewModel: PromptKuViewModel) {
             modifier = Modifier.padding(padding)
         ) {
             when (tab) {
-                0 -> if (quickMode) {
+                0 -> when (v2ViewModel.step) {
+                    V2Step.IDEA -> V2IdeaScreen(v2 = v2ViewModel)
+                    V2Step.STORY -> V2StoryScreen(v2 = v2ViewModel)
+                    V2Step.PROMPTS -> V2PromptScreen(v2 = v2ViewModel)
+                    V2Step.KEYS -> V2KeysScreen(v2 = v2ViewModel)
+                }
+                1 -> if (quickMode) {
                     QuickScreen(
                         viewModel = viewModel,
                         onGoToDetail = { quickMode = false },
-                        onGoToScript = { tab = 3 }
+                        onGoToScript = { tab = 4 }
                     )
                 } else {
                     WizardScreen(
                         viewModel = viewModel,
-                        onGoToTemplates = { tab = 1 },
+                        onGoToTemplates = { tab = 2 },
                         onGoToQuick = { quickMode = true }
                     )
                 }
-                1 -> TemplateScreen(
+                2 -> TemplateScreen(
                     onUseTemplate = { id ->
                         val template = Templates.all.firstOrNull { it.id == id }
                         if (template != null) {
                             viewModel.applyTemplate(template)
                             quickMode = false
-                            tab = 0
+                            tab = 1
                         }
                     }
                 )
-                2 -> ProjectScreen(
+                3 -> ProjectScreen(
                     viewModel = viewModel,
                     onGoToWizard = {
                         quickMode = false
-                        tab = 0
+                        tab = 1
                     }
                 )
-                3 -> ScriptScreen(
+                4 -> ScriptScreen(
                     viewModel = viewModel,
-                    onGoToProjects = { tab = 2 }
+                    onGoToProjects = { tab = 3 }
                 )
-                4 -> DnaScreen(viewModel = viewModel)
-                5 -> HistoryScreen(viewModel = viewModel)
-                6 -> EffectsScreen()
+                5 -> DnaScreen(viewModel = viewModel)
+                6 -> HistoryScreen(viewModel = viewModel)
+                7 -> EffectsScreen()
             }
         }
     }

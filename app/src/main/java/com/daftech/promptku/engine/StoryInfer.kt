@@ -29,14 +29,27 @@ object StoryInfer {
     )
 
     // Lokasi di kalimat -> dunia (menimpa dunia default genre).
+    // v2.0 — pencocokan TOKEN (bukan substring): "laut" tidak lagi
+    // menelan "lautan". Urutan = paling spesifik dulu: Antartika
+    // SEBELUM Lautan Lepas, Lautan Lepas SEBELUM Pantai.
     private val LOCATIONS: List<Triple<List<String>, String, String>> = listOf(
+        Triple(
+            listOf("antartika", "kutub selatan", "samudra selatan"),
+            "Lautan Es Antartika",
+            "a vast frozen Antarctic ocean, endless ice fields, drifting icebergs, pale cold light, snow falling on white ice"
+        ),
+        Triple(
+            listOf("lautan", "samudra", "laut lepas"),
+            "Lautan Lepas",
+            "an endless open ocean, deep blue waves, horizon in all directions, cold wind, no land in sight"
+        ),
         Triple(
             listOf("bengkel", "tambal ban"),
             "Bengkel",
             "a small roadside tire repair shop at dusk, worn tires stacked against the wall, tools scattered on the ground"
         ),
         Triple(
-            listOf("pantai", "laut"),
+            listOf("pantai"),
             "Pantai",
             "a quiet beach at sunset, golden light on calm water, empty benches"
         ),
@@ -147,8 +160,8 @@ object StoryInfer {
         ),
         Genre.THRILLER to GenreRule(
             keywords = listOf(
-                "mata-mata", "culik", "buron", "misteri", "detektif", "bunuh",
-                "rahasia", "penculikan", "spionase"
+                "mata-mata", "culik", "menculik", "buron", "misteri", "detektif", "bunuh",
+                "membunuh", "rahasia", "penculikan", "spionase"
             ),
             worldName = "Gang Hujan",
             worldDescEn = "a narrow rainy alley at night, flickering street lamp, wet asphalt, brick walls",
@@ -159,9 +172,10 @@ object StoryInfer {
         ),
         Genre.ACTION to GenreRule(
             keywords = listOf(
-                "berantem", "bertarung", "pukul", "mukul", "tinju", "ninju",
-                "tendang", "nendang", "tembak", "nembak", "super", "raksasa",
-                "kejar", "silat", "jagoan", "duel", "berkelahi",
+                "berantem", "bertarung", "pukul", "mukul", "memukul", "tinju",
+                "ninju", "meninju", "tendang", "nendang", "menendang",
+                "tembak", "nembak", "menembak", "super", "raksasa",
+                "kejar", "mengejar", "silat", "jagoan", "duel", "berkelahi",
                 "melawan"
             ),
             worldName = "Kota Malam",
@@ -169,7 +183,11 @@ object StoryInfer {
             emotion = "berani",
             style = VisualStyle.REALISTIC,
             ambienceEn = "distant traffic, wind, low city hum",
-            card = CharacterCard("calm confident look", "fist raised", "torn jacket", "")
+            // v2.0 — kartu default NETRAL: gestur + outfit KOSONG.
+            // "fist raised" + "torn jacket" di sini dulu menempel ke
+            // SEMUA cerita Action (Bejo, kurir, humanoid Antartika).
+            // Kartu spesifik diturunkan dari sinopsis di infer().
+            card = CharacterCard("calm confident look", "", "")
         ),
         Genre.KOMEDI to GenreRule(
             keywords = listOf(
@@ -252,17 +270,22 @@ object StoryInfer {
         }
     }
 
-    fun extractAntagonist(lower: String): Pair<String, String> {
+    // v2.0 — pencocokan TOKEN (TokenBoundary), bukan substring.
+    // "humanoid kedua" kini dikenali sebagai antagonis (bukan fallback
+    // "shadowy figure" / "the giant" dari effect fragment).
+    fun extractAntagonist(sentence: String): Pair<String, String> {
         return when {
-            lower.contains("raksasa") || lower.contains("giant") ->
-                "Raksasa" to "${giantSize(lower)}giant, massive arms, cracked stone skin, heavy iron boots"
-            lower.contains("naga") || lower.contains("dragon") ->
+            TokenBoundary.containsAnyToken(sentence, listOf("raksasa", "giant")) ->
+                "Raksasa" to "${giantSize(sentence.lowercase())}giant, massive arms, cracked stone skin, heavy iron boots"
+            TokenBoundary.containsAnyToken(sentence, listOf("humanoid")) ->
+                "Humanoid Kedua" to "a second humanoid, smooth pale skin, faintly glowing eyes, sleek dark metallic armor, hovering above the ocean"
+            TokenBoundary.containsAnyToken(sentence, listOf("naga", "dragon")) ->
                 "Naga" to "a great dragon, dark scales, glowing eyes, huge wings"
-            lower.contains("kuntilanak") ->
+            TokenBoundary.containsToken(sentence, "kuntilanak") ->
                 "Kuntilanak" to "a pale ghost woman in a white dress, long black hair covering her face"
-            lower.contains("pocong") ->
+            TokenBoundary.containsToken(sentence, "pocong") ->
                 "Pocong" to "a wrapped figure in a white shroud, hopping slowly, pale face"
-            lower.contains("musuh") || lower.contains("penjahat") || lower.contains("villain") ->
+            TokenBoundary.containsAnyToken(sentence, listOf("musuh", "penjahat", "villain")) ->
                 "Penjahat" to "a ruthless villain, dark coat, cold eyes, scarred cheek"
             else -> "" to ""
         }
@@ -271,40 +294,50 @@ object StoryInfer {
     // v1.4.1 — modifier dunia dari kalimat ("langit kota yang sudah
     // hancur" -> dunia + "high above" + "ruined"). Modifier ditempel
     // di belakang deskripsi dunia hasil lokasi/genre.
-    fun worldModifiers(lower: String): List<String> {
+    fun worldModifiers(sentence: String): List<String> {
         val mods = mutableListOf<String>()
-        if (lower.contains("langit") || lower.contains("sky")) {
+        if (TokenBoundary.containsAnyToken(sentence, listOf("langit", "sky"))) {
             // v1.4.1 — sengaja TANPA frasa "high above": modifier langit
             // tidak boleh menyalakan angle BIRD (dunia dasar tetap
             // jalanan kota; BIRD+STATIC+WIDE dilarang di scene 01).
             mods.add("in the sky, clouds drifting below")
         }
-        if (lower.contains("hancur") || lower.contains("runtuh") || lower.contains("ruin")) {
+        if (TokenBoundary.containsAnyToken(sentence, listOf("hancur", "runtuh", "ruin"))) {
             mods.add("ruined, broken and collapsed, smoke rising in the distance")
         }
-        if (lower.contains("hujan") || lower.contains("rain")) {
+        if (TokenBoundary.containsAnyToken(sentence, listOf("hujan", "rain"))) {
             mods.add("rain falling on the wet streets")
         }
         return mods
     }
 
     fun infer(sentence: String): Inference {
-        val lower = " " + sentence.lowercase() + " "
         val matched = RULES.firstOrNull { (_, rule) ->
-            rule.keywords.any { keyword -> lower.contains(keyword) }
+            TokenBoundary.containsAny(sentence, rule.keywords)
         }
         val genre = matched?.first ?: Genre.DRAMA
         val rule = matched?.second ?: DRAMA_RULE
         val location = LOCATIONS.firstOrNull { (keywords, _, _) ->
-            keywords.any { keyword -> lower.contains(keyword) }
+            TokenBoundary.containsAny(sentence, keywords)
         }
-        val (antagonist, antagonistDescEn) = extractAntagonist(lower)
-        val modifiers = worldModifiers(lower)
+        val (antagonist, antagonistDescEn) = extractAntagonist(sentence)
+        val modifiers = worldModifiers(sentence)
         val baseWorld = location?.third ?: rule.worldDescEn
         val worldDesc = if (modifiers.isEmpty()) {
             baseWorld
         } else {
             "$baseWorld, ${modifiers.joinToString(", ")}"
+        }
+        // v2.0 — kartu diturunkan dari sinopsis, bukan dari genre saja.
+        // Tokoh humanoid/robot TIDAK pakai jaket (sobek atau tidak).
+        val card = when {
+            genre == Genre.ACTION && TokenBoundary.containsAnyToken(
+                sentence, listOf("humanoid", "robot", "android")
+            ) -> CharacterCard(
+                "smooth pale skin, faintly glowing eyes", "",
+                "sleek dark metallic armor", ""
+            )
+            else -> rule.card
         }
         return Inference(
             genre = genre,
@@ -313,7 +346,7 @@ object StoryInfer {
             emotion = rule.emotion,
             style = rule.style,
             ambienceEn = rule.ambienceEn,
-            characterCard = rule.card,
+            characterCard = card,
             antagonist = antagonist,
             antagonistDescEn = antagonistDescEn
         )
@@ -344,6 +377,15 @@ object StoryInfer {
         inference: Inference
     ): ScriptInput {
         val hero = heroName.trim().ifBlank { heroNameFromSentence(sentence) ?: "Raka" }
+        // v2.0 — deskripsi tokoh diturunkan dari kartu (bukan hardcode
+        // "worn jacket" untuk semua cerita).
+        val descEn = buildString {
+            append("a young Indonesian man in his thirties, determined eyes")
+            val outfit = inference.characterCard.objectProp
+            if (outfit.isNotBlank()) append(", $outfit")
+            val look = inference.characterCard.trait
+            if (look.isNotBlank()) append(", $look")
+        }
         return ScriptInput(
             title = sentence.trim().take(80),
             synopsis = sentence.trim(),
@@ -351,7 +393,7 @@ object StoryInfer {
             durationMinutes = minutes.coerceIn(1, 10),
             emotion = inference.emotion,
             protagonistName = hero,
-            protagonistDescEn = "a young Indonesian man in his thirties, worn jacket, determined eyes",
+            protagonistDescEn = descEn,
             antagonist = inference.antagonist,
             antagonistDescEn = inference.antagonistDescEn,
             worldName = inference.worldName,

@@ -369,12 +369,14 @@ object EffectLibrary {
     // ikut jadi trigger (pelajaran v1.4.2: tes meninju gagal).
     private val FIGHT_TRIGGERS = listOf(
         "berantem", "bertarung", "melawan", "lawan", "pukul", "mukul",
-        "tinju", "ninju", "tendang", "nendang", "tembak", "nembak",
+        "memukul", "dipukul", "tinju", "ninju", "meninju", "tendang",
+        "nendang", "menendang", "tembak", "nembak", "menembak",
         "silat", "duel", "berkelahi", "jagoan", "serang",
-        "hajar", "tarung", "tumbuk"
+        "menyerang", "diserang", "hajar", "tarung", "tumbuk"
     )
     private val EXPLOSION_TRIGGERS = listOf(
-        "ledak", "meledak", "bom", "granat", "terbakar", "bakar", "kebakaran"
+        "ledak", "ledakan", "meledak", "bom", "granat", "terbakar", "bakar",
+        "membakar", "dibakar", "kebakaran"
     )
     private val EMOTION_TRIGGERS: List<Pair<List<String>, String>> = listOf(
         listOf("sedih", "menangis", "duka") to "emotion_sad",
@@ -386,11 +388,13 @@ object EffectLibrary {
     )
 
     fun detect(sentence: String): DetectedEffects {
-        val lower = " " + sentence.lowercase() + " "
-        val fight = FIGHT_TRIGGERS.any { lower.contains(it) }
-        val explosion = EXPLOSION_TRIGGERS.any { lower.contains(it) }
+        // v2.0 — pencocokan TOKEN, bukan substring (pelajaran Antartika:
+        // substring menelan kata lain). Bentuk berasimilasi/pasif me-
+        // /di- ditulis eksplisit di daftar trigger di atas.
+        val fight = TokenBoundary.containsAny(sentence, FIGHT_TRIGGERS)
+        val explosion = TokenBoundary.containsAny(sentence, EXPLOSION_TRIGGERS)
         val emotion = EMOTION_TRIGGERS.firstOrNull { (keys, _) ->
-            keys.any { lower.contains(it) }
+            TokenBoundary.containsAny(sentence, keys)
         }?.second
         return DetectedEffects(fight = fight, explosion = explosion, emotionId = emotion)
     }
