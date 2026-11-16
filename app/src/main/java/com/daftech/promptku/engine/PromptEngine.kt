@@ -27,8 +27,18 @@ object PromptEngine {
 
     // Gaya visual -> (tampilan, grade warna, lensa). Satu grade lock per gaya,
     // dicopas identik di semua scene supaya film terasa satu.
-    fun styleLook(style: VisualStyle): Triple<String, String, String> {
-        return when (style) {
+    // Draft Offline v2 — frasa gaya yang menyebut tempat yang TIDAK ADA di
+    // dunia cerita dibuang ("neon-lit streets" di stasiun luar angkasa,
+    // cacat lapangan 16 Nov 2026). Hanya frasa tempat yang disaring;
+    // tampilan/grade/lensa lain utuh. Dunia kosong = tanpa filter.
+    private val STYLE_PLACE_TOKENS = listOf(
+        "street", "alley", "rooftop", "harbor", "temple", "forest",
+        "coffee shop", "promenade", "seaside", "city", "village",
+        "market", "house"
+    )
+
+    fun styleLook(style: VisualStyle, worldText: String = ""): Triple<String, String, String> {
+        val base = when (style) {
             VisualStyle.REALISTIC -> Triple(
                 "live-action realistic, natural skin texture, realistic dirt, sweat and torn fabric",
                 "teal-and-orange grade, subtle film grain",
@@ -60,6 +70,13 @@ object PromptEngine {
                 "50mm, soft focus"
             )
         }
+        val world = worldText.lowercase()
+        if (world.isBlank()) return base
+        val look = base.first.split(", ").filter { phrase ->
+            val lower = phrase.lowercase()
+            STYLE_PLACE_TOKENS.none { token -> lower.contains(token) && !world.contains(token) }
+        }.joinToString(", ")
+        return Triple(look.ifBlank { base.first }, base.second, base.third)
     }
 
     // Dunia default per genre, dipakai kalau user belum menulis World Lock sendiri.
@@ -213,10 +230,18 @@ object PromptEngine {
 
     // v1.4.1 — default material mengikuti dunia, bukan selalu debu
     // (cacat lapangan 16 Nov: "dust drifting" di 30/30 scene kota
-    // neon hujan).
+    // neon hujan). Draft Offline v2 menambah stasiun/hutan/kuil
+    // (cacat lapangan 16 Nov 23:35: "dust drifts" di stasiun luar angkasa).
     fun materialDefaultFor(worldDescEn: String): String {
         val lower = worldDescEn.lowercase()
         return when {
+            lower.contains("space station") || lower.contains("spacecraft") ||
+                lower.contains("spaceship") || lower.contains("orbit") ->
+                "soft machine hum fills the recycled air, console lights blink steadily"
+            lower.contains("forest") || lower.contains("trees") ->
+                "mist drifts between the tall trees, leaves rustle softly"
+            lower.contains("temple") || lower.contains("incense") ->
+                "incense smoke curls slowly through the still air"
             lower.contains("rain") -> "rain streaks the air, mist drifts low over the wet ground"
             lower.contains("snow") -> "snowflakes drift slowly through the cold air"
             lower.contains("night") && lower.contains("city") -> "mist drifts through the neon light, rain on the wet ground"
@@ -430,7 +455,7 @@ object PromptEngine {
     // TIDAK diulang mentah di beat kedua ("Ends as $poseEnd.").
     private fun buildFlow(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
-        val look = styleLook(style)
+        val look = styleLook(style, worldText(input))
         val shot = input.shotSize?.phraseEn ?: "medium shot"
         val angle = input.angle?.phraseEn ?: "eye level"
         val lens = "${input.lensMm ?: 35}mm"
@@ -515,7 +540,7 @@ object PromptEngine {
     // Batas keras encoder 512 token: info penting ditulis di awal.
     private fun buildWan(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
-        val look = styleLook(style)
+        val look = styleLook(style, worldText(input))
         val camera = input.cameraMove?.phraseEn ?: "static locked camera"
         val light = input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
@@ -551,7 +576,7 @@ object PromptEngine {
     // di Kling dibawa Element Reference, bukan deskripsi panjang.
     private fun buildKling(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
-        val look = styleLook(style)
+        val look = styleLook(style, worldText(input))
         val camera = input.cameraMove?.phraseEn ?: "static locked camera"
         val light = input.light ?: LightKind.GOLDEN_HOUR
         val mood = (input.genre ?: Genre.DRAMA).moodEn
@@ -608,7 +633,7 @@ object PromptEngine {
     // Constraints DILINDUNGI dari trim (tail), sama seperti lock Flow.
     private fun buildSeedance(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
-        val look = styleLook(style)
+        val look = styleLook(style, worldText(input))
         val camera = input.cameraMove?.phraseEn ?: "static locked camera"
         val light = input.light ?: LightKind.GOLDEN_HOUR
         val mood = (input.genre ?: Genre.DRAMA).moodEn

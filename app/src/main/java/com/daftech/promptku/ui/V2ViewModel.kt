@@ -488,11 +488,20 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         angle = scene.angle.name,
                         dialogueId = scene.dialogue?.textId.orEmpty(),
                         dialogueEn = scene.dialogue?.textEn.orEmpty(),
-                        audioEn = "",
+                        // Draft Offline v2 — audio dari ambience StoryInfer
+                        // ("low station hum..." untuk stasiun luar angkasa),
+                        // bukan "" (dulu: render jatuh ke "wind, quiet
+                        // ambience" dan Mode B ke "quiet ambience").
+                        audioEn = inference.ambienceEn,
                         effectId = scene.effectId,
                         wantEn = scene.want,
                         obstacleEn = scene.obstacle,
-                        transitionEn = scene.transition
+                        transitionEn = scene.transition,
+                        // Draft Offline v2 — rantai pose v1 dibawa (dulu
+                        // dibuang: render selalu "standing still" /
+                        // "standing firm" 18x).
+                        poseStart = scene.poseStart,
+                        poseEnd = scene.poseEnd
                     )
                 }
                 val rendered = ModeRender.renderAll(
@@ -784,12 +793,21 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 val fresh = newPlans.first()
+                // Draft Offline v2 — pose lama dipertahankan: regenerasi
+                // (LLM) tidak mengembalikan pose, dan rantai pose v1
+                // (ENTRY scene ini = EXIT scene sebelumnya) harus utuh.
+                // Plan cloud (pose kosong) tidak berubah apa-apa.
+                val oldPlan = scenes.firstOrNull { it.sceneNumber == sceneNumber }?.plan
+                val posedFresh = fresh.copy(
+                    poseStart = oldPlan?.poseStart.orEmpty(),
+                    poseEnd = oldPlan?.poseEnd.orEmpty()
+                )
                 val allPlans = scenes.map { it.plan }
-                    .map { if (it.sceneNumber == sceneNumber) fresh.copy(effectId = "") else it }
+                    .map { if (it.sceneNumber == sceneNumber) posedFresh.copy(effectId = "") else it }
                 val assigned = ModeRender.assignEffects(
                     allPlans, isFight, current.beats.size.coerceAtLeast(1)
                 )
-                val newPlan = assigned.firstOrNull { it.sceneNumber == sceneNumber } ?: fresh
+                val newPlan = assigned.firstOrNull { it.sceneNumber == sceneNumber } ?: posedFresh
                 val rendered = ModeRender.renderScene(current, newPlan, mode, images.size)
                     .copy(approved = false)
                 scenes = scenes.map { if (it.sceneNumber == sceneNumber) rendered else it }

@@ -102,7 +102,13 @@ data class V2ScenePlan(
     val obstacleEn: String,
     val transitionEn: String,
     /** v2.1 — narasi voiceover per scene (Indonesia, gaya Nalar) untuk SuaraKu. */
-    val narrationId: String = ""
+    val narrationId: String = "",
+    /** Draft Offline v2 — rantai pose v1 (ENTRY = pose akhir klip
+     *  sebelumnya, POSE_CYCLE): tadinya dibuang di mapping offlineDraft
+     *  sehingga render selalu jatuh ke default "standing still" /
+     *  "standing firm" 18x. Kosong = default render seperti biasa. */
+    val poseStart: String = "",
+    val poseEnd: String = ""
 )
 
 /** Satu scene SETELAH render lokal + gerbang validasi. */
@@ -259,7 +265,9 @@ object V2Models {
                 wantEn = o.str("want_en").orEmpty(),
                 obstacleEn = o.str("obstacle_en").orEmpty(),
                 transitionEn = o.str("transition_en").orEmpty(),
-                narrationId = o.str("narration_id").orEmpty()
+                narrationId = o.str("narration_id").orEmpty(),
+                poseStart = o.str("pose_start").orEmpty(),
+                poseEnd = o.str("pose_end").orEmpty()
             )
         }.sortedBy { it.sceneNumber }
 
@@ -277,6 +285,8 @@ object V2Models {
         "want_en" to Json.strOf(plan.wantEn),
         "obstacle_en" to Json.strOf(plan.obstacleEn),
         "transition_en" to Json.strOf(plan.transitionEn),
-        "narration_id" to Json.strOf(plan.narrationId)
+        "narration_id" to Json.strOf(plan.narrationId),
+        "pose_start" to Json.strOf(plan.poseStart),
+        "pose_end" to Json.strOf(plan.poseEnd)
     )
 }

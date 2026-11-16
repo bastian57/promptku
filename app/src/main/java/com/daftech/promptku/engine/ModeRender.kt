@@ -257,6 +257,10 @@ object ModeRender {
             cameraMove = shot.cameraMove,
             light = lightKindFrom(bible.lightEn),
             actionEn = action,
+            // Draft Offline v2 — pose dari rencana (rantai v1); kosong =
+            // default render ("standing still" / "standing firm").
+            poseStart = plan.poseStart,
+            poseEnd = plan.poseEnd,
             audioEn = cleanField(plan.audioEn),
             dialogue = DialogueLine(
                 speaker = hero?.name.orEmpty(),

@@ -509,11 +509,335 @@ object ScriptPools {
 
     // Pool cerita untuk satu beat: kurir kalau kalimatnya memang kisah
     // kurir, kalau tidak pool netral actionsFor (default Action baru).
+    // Draft Offline v2 — DUNIA dulu, baru genre: kalau dunia cocok dengan
+    // satu pool dunia di bawah, pool dunia yang dipakai (aksi "walks
+    // slowly through the quiet street" di stasiun luar angkasa adalah
+    // cacat lapangan 16 Nov 2026). Kalau tidak cocok, pool genre tetap
+    // dipakai tapi dibersihkan dari aksi yang menyebut tempat yang tidak
+    // ada di dunia itu (worldClashFreeActions).
     fun actionsForStory(input: ScriptInput, beatIndex: Int): List<String> {
-        return if (input.genre == Genre.ACTION && isCourierStory(input.synopsis)) {
-            courierActionsFor(beatIndex)
+        if (input.genre == Genre.ACTION && isCourierStory(input.synopsis)) {
+            return courierActionsFor(beatIndex)
+        }
+        worldActionsFor(input.worldDescEn, beatIndex)?.let { return it }
+        return worldClashFreeActions(actionsFor(input.genre, beatIndex), input.worldDescEn)
+    }
+
+    // ---------- Draft Offline v2: aksi sadar dunia ----------
+
+    // Pool aksi per dunia — bentuk sama seperti actionsFor: 8 daftar x 8
+    // aksi (present tense, 1 aksi, <=12 kata), indeks = beatIndex % 8.
+    // Kata kunci dicocokkan ke worldDescEn (bahasa Inggris, lowercase).
+    private val WORLD_ACTION_POOLS: List<Pair<List<String>, List<List<String>>>> = listOf(
+        listOf("space station", "spacecraft", "spaceship", "orbit") to listOf(
+            listOf(
+                "floats down the corridor, checking each panel",
+                "gazes through the viewport at Earth below",
+                "taps the blinking console and waits",
+                "drifts past the sleeping crew pods",
+                "checks the oxygen gauge and nods",
+                "presses a glowing panel and listens",
+                "walks the quiet corridor in magnetic boots",
+                "watches Earth rise through the small window"
+            ),
+            listOf(
+                "hears a strange beep from the airlock",
+                "sees a warning light flash on the console",
+                "notices the gravity flicker for a second",
+                "finds a hatch open that should be sealed",
+                "watches a tool drift past, untouched",
+                "hears static crackle through the comms",
+                "spots a shadow moving behind the glass",
+                "reads an alert he has never seen before"
+            ),
+            listOf(
+                "studies the station schematic and makes a plan",
+                "traces the faulty circuit with one finger",
+                "calls the crew on the comms and asks for help",
+                "memorizes the airlock codes and picks his route",
+                "checks his tether twice and rolls his shoulders",
+                "gathers tools from the storage module",
+                "draws a route on the fogged viewport",
+                "counts the oxygen tanks and nods"
+            ),
+            listOf(
+                "pushes off the wall and glides through the hatch",
+                "dodges a floating panel and grabs the rail",
+                "slides through the narrow maintenance tunnel",
+                "climbs the ladder as alarms flash red",
+                "swings across the cargo bay on a tether",
+                "braces against the wall as the station shakes",
+                "crawls through the vent toward the console",
+                "runs in magnetic boots as lights flicker"
+            ),
+            listOf(
+                "takes a hard hit and tumbles through the air",
+                "watches his friend drift away, tether cut",
+                "loses his grip and spins toward the glass",
+                "sees the airlock seal shut behind him",
+                "clutches his injured arm and breathes hard",
+                "finds his comms dead in the silence",
+                "watches the oxygen gauge drop toward zero",
+                "reads the failure report and goes pale"
+            ),
+            listOf(
+                "is pinned against the wall as debris flies past",
+                "drops to his knees as the alarms scream",
+                "lies floating as the lights die around him",
+                "reaches for the hatch but it seals shut",
+                "crawls toward the escape pod as metal groans",
+                "presses his forehead to the cold glass",
+                "watches the last light fade from the corridor",
+                "lies still as the station goes dark"
+            ),
+            listOf(
+                "pushes off the wall and charges the console",
+                "forces the jammed hatch open with both hands",
+                "faces the failing reactor, breathing steadily",
+                "wrenches a metal bar free and swings it",
+                "shoves the debris aside and breaks through",
+                "stands tall in the drifting smoke",
+                "roars and rushes back into the fight",
+                "grabs the manual override and pulls hard"
+            ),
+            listOf(
+                "floats on as the station hums behind him",
+                "looks back once at Earth, then moves on",
+                "helps a crewmate to their feet and nods",
+                "stands at the viewport as the sun rises",
+                "smiles quietly and powers down the console",
+                "waves goodbye to the module that tested him",
+                "sits by the window and finally breathes out",
+                "drifts home as the morning light returns"
+            )
+        ),
+        listOf("forest", "woods", "jungle", "trees") to listOf(
+            listOf(
+                "walks slowly between the tall trees",
+                "listens to birdsong in the morning mist",
+                "touches the mossy bark and breathes in",
+                "follows a narrow trail through the ferns",
+                "sits on a fallen log and watches the light",
+                "gathers dry branches for the fire",
+                "steps over roots as mist curls around him",
+                "watches sunlight filter through the leaves"
+            ),
+            listOf(
+                "hears a branch snap behind him",
+                "sees a shadow move between the trees",
+                "notices strange marks carved into the bark",
+                "finds a footprint too large to be human",
+                "watches birds burst from the canopy at once",
+                "hears a low growl from the thicket",
+                "spots a light flickering deep in the woods",
+                "finds an old trail no one has walked in years"
+            ),
+            listOf(
+                "studies the trail and makes a plan",
+                "marks the trees so he can find his way back",
+                "calls out and listens for an answer",
+                "memorizes the river bend and picks his ground",
+                "checks his pack and tightens the straps",
+                "gathers herbs from the forest floor",
+                "draws a map in the dirt with a stick",
+                "counts his supplies and nods"
+            ),
+            listOf(
+                "sprints between the trees as branches whip past",
+                "slides down the muddy bank and rolls to his feet",
+                "leaps over a fallen trunk and keeps running",
+                "climbs a tall tree to see over the canopy",
+                "swings across the ravine on a thick vine",
+                "ducks under low branches as something chases him",
+                "wades through the cold stream, soaked to the knees",
+                "runs along the ridge as the mist closes in"
+            ),
+            listOf(
+                "takes a heavy blow and staggers against a tree",
+                "watches his friend fall on the forest floor",
+                "loses his footing on the wet leaves",
+                "sees the fire die in the rain and keeps moving",
+                "clutches his injured arm and breathes hard",
+                "finds his pack torn open on the ground",
+                "watches his lantern shatter on the rocks",
+                "reads the warning carved in the old oak"
+            ),
+            listOf(
+                "is cornered against a cliff by the beast",
+                "drops to his knees as the beast closes in",
+                "lies on the wet leaves as shadows surround him",
+                "reaches for his knife but it slips away",
+                "crawls toward the river as branches close in",
+                "presses his forehead to the cold earth",
+                "watches the last light fade through the trees",
+                "lies still as the footsteps fade away"
+            ),
+            listOf(
+                "rises slowly, fists clenched, eyes burning",
+                "charges forward and throws a punch",
+                "snatches a burning branch and swings it",
+                "stands tall in the smoke as the beast hesitates",
+                "wrenches a sharp stick free and aims it",
+                "shoves the beast aside and breaks through",
+                "faces the beast alone, breathing steadily",
+                "roars and rushes back into the fight"
+            ),
+            listOf(
+                "walks on as the forest wakes behind him",
+                "looks back once at the misty trees, then walks on",
+                "helps a stranger to their feet and nods",
+                "stands on the hill as the sky clears",
+                "smiles quietly and walks home",
+                "waves goodbye to the forest that tested him",
+                "sits by the stream and finally breathes out",
+                "walks home as the morning light returns"
+            )
+        ),
+        listOf("sea", "beach", "harbor", "ocean", "seaside", "coast") to listOf(
+            listOf(
+                "walks slowly along the empty beach",
+                "listens to the waves and breathes in the salt air",
+                "watches fishing boats rock in the harbor",
+                "sits on the warm sand and watches the tide",
+                "mends a torn net by the wooden pier",
+                "steps into the shallow water and smiles",
+                "gathers shells along the wet sand",
+                "watches the sun sink into the sea"
+            ),
+            listOf(
+                "hears a strange sound from the deep water",
+                "sees a shadow pass beneath the boat",
+                "notices the tide pulling out too fast",
+                "finds a bottle with a note inside",
+                "watches gulls scatter from the pier at once",
+                "hears a low horn from the fog",
+                "spots a light flickering on the dark water",
+                "finds a footprint washed away by the waves"
+            ),
+            listOf(
+                "studies the tide chart and makes a plan",
+                "checks the ropes and knots them twice",
+                "calls the harbor master and asks for help",
+                "memorizes the coastline and picks his route",
+                "packs supplies into the small boat",
+                "draws a course on the salt-stained map",
+                "counts the fuel cans and nods",
+                "tests the engine and listens to it cough"
+            ),
+            listOf(
+                "sprints along the pier as waves crash over it",
+                "slides down the wet ramp and lands in the boat",
+                "leaps onto the rocking boat and grabs the rail",
+                "rows hard as the storm closes in",
+                "swings across the gap on a loose rope",
+                "braces against the mast as the boat heaves",
+                "wades through the surf toward the shore",
+                "runs along the beach as the storm hits"
+            ),
+            listOf(
+                "takes a wave full in the chest and staggers back",
+                "watches his friend fall overboard and grits his teeth",
+                "loses his footing on the slippery deck",
+                "sees the harbor lights fade in the fog",
+                "clutches his injured arm and breathes hard",
+                "finds his radio smashed on the wet boards",
+                "watches his boat drift away from the pier",
+                "reads the storm warning and goes pale"
+            ),
+            listOf(
+                "is pinned against the mast as waves hammer the boat",
+                "drops to his knees as water floods the deck",
+                "lies on the wet sand as the tide comes in",
+                "reaches for the rope but it slips through his fingers",
+                "crawls toward the pier as the storm roars",
+                "presses his forehead to the cold wet wood",
+                "watches the last light fade over the sea",
+                "lies still as the waves pull back"
+            ),
+            listOf(
+                "rises slowly, fists clenched, eyes burning",
+                "charges forward and throws a punch",
+                "hauls the sail up and catches the wind",
+                "stands tall in the spray as the storm hesitates",
+                "wrenches the tiller free and steers hard",
+                "shoves the wreckage aside and breaks through",
+                "faces the storm alone, breathing steadily",
+                "roars and rows back into the waves"
+            ),
+            listOf(
+                "sails on as the harbor wakes behind him",
+                "looks back once at the open sea, then sails on",
+                "helps a stranger to their feet and nods",
+                "stands on the pier as the sky clears",
+                "smiles quietly and ties up the boat",
+                "waves goodbye to the sea that tested him",
+                "sits on the sand and finally breathes out",
+                "walks home as the morning light returns"
+            )
+        )
+    )
+
+    /** Daftar aksi beat ini untuk dunia cerita; null kalau tidak ada pool
+     *  dunia yang cocok (pakai pool genre + filter bentrok di bawah).
+     *  Lautan beku (Antartika) BUKAN pantai: pool laut (beach/sand)
+     *  tidak boleh dipakai di dunia es — regresi audit 16 Nov. */
+    fun worldActionsFor(worldDescEn: String, beatIndex: Int): List<String>? {
+        val lower = worldDescEn.lowercase()
+        if (lower.isBlank()) return null
+        val icy = listOf("ice", "frozen", "antarctic", "arctic", "glacier")
+            .any { lower.contains(it) }
+        for ((keywords, pools) in WORLD_ACTION_POOLS) {
+            if (icy && keywords.contains("sea")) continue
+            if (keywords.any { lower.contains(it) }) return pools[beatIndex % 8]
+        }
+        return null
+    }
+
+    // Aksi tambal yang BENAR-BENAR netral: tanpa nama tempat apa pun
+    // (NEUTRAL_ACTIONS lama masih berisi "street"/"city" — tidak boleh
+    // dipakai sebagai tambal di sini, kalau tidak aksi jalanan masuk
+    // lagi lewat pintu belakang).
+    val WORLD_NEUTRAL_ACTIONS: List<String> = listOf(
+        "pauses and looks around carefully",
+        "takes a slow breath and steadies himself",
+        "listens carefully to the silence around him",
+        "takes a cautious step forward",
+        "looks down at his hands for a moment",
+        "closes his eyes and gathers his thoughts",
+        "nods to himself and moves on",
+        "holds still, waiting for what comes next"
+    )
+
+    // Kata tempat di dalam aksi pool. Aksi yang menyebut token ini
+    // DIBUANG kalau dunia cerita tidak menyebut token yang sama.
+    // Sengaja TIDAK ada "room"/"house" (ruang generik yang ada di
+    // hampir semua bangunan) dan TIDAK ada "motorcycle"/"coffee"/"shop"
+    // (sudah ketangkap token lain: "streets", "street").
+    private val PLACE_TOKENS: List<String> = listOf(
+        "street", "alley", "rooftop", "porch", "windowsill", "garden",
+        "market", "harbor", "beach", "forest", "temple", "kitchen",
+        "lane", "hill", "curb", "gutter", "asphalt", "pavement",
+        "drainpipe", "balcony", "stairwell", "tracks", "city", "town",
+        "village", "corridor", "station", "ship", "boat", "sea",
+        "desert", "snow"
+    )
+
+    /** Buang aksi yang menyebut tempat yang tidak ada di dunia cerita,
+     *  lalu tambal dengan aksi netral sampai ukuran awal (pola sama
+     *  seperti usableActionsFor). Dunia kosong = tidak difilter. */
+    fun worldClashFreeActions(actions: List<String>, worldDescEn: String): List<String> {
+        val world = worldDescEn.lowercase()
+        if (world.isBlank()) return actions
+        val filtered = actions.filter { action ->
+            val lower = action.lowercase()
+            PLACE_TOKENS.none { token -> lower.contains(token) && !world.contains(token) }
+        }
+        val filled = (filtered + WORLD_NEUTRAL_ACTIONS.filter { it !in filtered })
+            .take(actions.size)
+        return if (filled.isEmpty()) {
+            listOf(WORLD_NEUTRAL_ACTIONS[0])
         } else {
-            actionsFor(input.genre, beatIndex)
+            filled
         }
     }
 
@@ -836,14 +1160,27 @@ object ScriptEngine {
     // di-skip, lalu pool diisi kembali sampai ukuran semula dengan aksi
     // netral (supaya aturan "tidak ada aksi berulang dalam satu beat"
     // tetap utuh walau 1-2 aksi terfilter). Dipakai build() + clearEffect().
-    fun usableActionsFor(actions: List<String>, beatIndex: Int, effectiveTimeOfDay: String): List<String> {
+    fun usableActionsFor(
+        actions: List<String>,
+        beatIndex: Int,
+        effectiveTimeOfDay: String,
+        worldDescEn: String = ""
+    ): List<String> {
         val filtered = actions.filter { action ->
             !ScriptBeats.timeClashes(action, effectiveTimeOfDay)
         }
-        val filled = (filtered + NEUTRAL_ACTIONS.filter { it !in filtered })
+        // Draft Offline v2 — tambal harus sadar dunia juga: NEUTRAL_ACTIONS
+        // lama berisi "street"/"city", jadi aksi jalanan bisa masuk lagi
+        // lewat pintu belakang kalau satu aksi dunia kena filter waktu.
+        val topUp = if (worldDescEn.isBlank()) {
+            NEUTRAL_ACTIONS
+        } else {
+            ScriptPools.worldClashFreeActions(NEUTRAL_ACTIONS, worldDescEn)
+        }
+        val filled = (filtered + topUp.filter { it !in filtered })
             .take(actions.size)
         return if (filled.isEmpty()) {
-            listOf(NEUTRAL_ACTIONS[beatIndex % NEUTRAL_ACTIONS.size])
+            listOf(topUp[beatIndex % topUp.size])
         } else {
             filled
         }
@@ -880,7 +1217,7 @@ object ScriptEngine {
         val pool = ScriptPools.actionsForStory(input, beat.index)
         val worldTime = ScriptBeats.timeOfDayFromWorld(input.worldDescEn)
         val effectiveTime = worldTime ?: beat.timeOfDay
-        val usable = usableActionsFor(pool, beat.index, effectiveTime)
+        val usable = usableActionsFor(pool, beat.index, effectiveTime, input.worldDescEn)
         return scene.copy(
             effectId = "",
             actionEn = usable.getOrElse(clipIdx % usable.size) {
@@ -936,7 +1273,7 @@ object ScriptEngine {
             val effectiveTimeOfDay = worldTime ?: beat.timeOfDay
             val light = ScriptBeats.lightForTime(effectiveTimeOfDay)
             val lens = ScriptBeats.lensForTension(beat.tension)
-            val usableActions = usableActionsFor(actions, beat.index, effectiveTimeOfDay)
+            val usableActions = usableActionsFor(actions, beat.index, effectiveTimeOfDay, input.worldDescEn)
 
             for (clipIdx in 0 until clipCount) {
                 // Aksi BERBEDA tiap klip dalam satu beat (pool 8 aksi,
