@@ -47,7 +47,7 @@ object FountainExport {
         val input = draft.input
         val out = StringBuilder()
         out.append("PROMPTKU - ${input.title.ifBlank { "Tanpa Judul" }}\n")
-        out.append("Dibuat dengan PromptKu v1.4.2 (Mode Naskah, offline, rule-based draft)\n")
+        out.append("Dibuat dengan PromptKu v1.4.3 (Mode Naskah, offline, rule-based draft)\n")
         out.append("Genre: ${input.genre.labelId} | Durasi: ${input.durationMinutes} menit | ")
         out.append("Total klip: ${draft.totalClips} | ${draft.estimatedCostId}\n")
         if (input.synopsis.isNotBlank()) {

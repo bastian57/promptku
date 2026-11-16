@@ -511,30 +511,177 @@ object ScriptPools {
         }
     }
 
-    fun dialoguesFor(genre: Genre, beatIndex: Int): List<String> {
-        val action = mapOf(
-            1 to listOf("What is this thing?", "Something is wrong here."),
-            2 to listOf("I need your help.", "There is no going back now."),
-            3 to listOf("Follow me. Stay low.", "Did you see that?"),
-            4 to listOf("You sold me out.", "It was never about the money."),
-            5 to listOf("It's over.", "Please. Not like this."),
-            6 to listOf("Not while I'm still standing.", "Get up. We finish this."),
-            7 to listOf("It's done.", "Let's go home.")
+    // Dialog per genre v1.4.3 — tiap genre punya suaranya sendiri di
+    // tiap peran dramatis (Discovery / Tension / Climax / Closing).
+    // Peran dihitung dari totalBeats, BUKAN dari nomor beat mentah:
+    // di struktur FIVE, beat 3 = Klimaks dan beat 4 = Penutup,
+    // sementara di EIGHT beat 3 = Fun & Games dan beat 4 = Harga
+    // Kemenangan. Tabel lama (per nomor beat) menaruh kalimat
+    // pengkhianatan "You sold me out." — yang ditulis untuk EIGHT
+    // beat 4 — di scene Penutup film Bejo 1 menit (audit lapangan
+    // 16 Nov 13:25 WIB). Tiap peran punya 3 baris, dipilih
+    // (seed + beatIdx) % 3; semua baris <= 8 kata (dialog <= 2
+    // kata/detik di jendela 5-10 detik).
+    // 4 kalimat generik lama DIRELOKASI, bukan dihapus: "I need your
+    // help." -> DRAMA Tension; "Did you see that?" -> DOKUMENTER
+    // Discovery; "You sold me out." -> THRILLER Tension;
+    // "Please. Not like this." -> DRAMA Climax.
+    enum class DialogueRole { DISCOVERY, TENSION, CLIMAX, CLOSING }
+
+    fun dialogueRoleFor(beatIndex: Int, totalBeats: Int): DialogueRole = when {
+        beatIndex == 1 -> DialogueRole.DISCOVERY
+        beatIndex == totalBeats - 2 -> DialogueRole.CLIMAX
+        beatIndex == totalBeats - 1 -> DialogueRole.CLOSING
+        else -> DialogueRole.TENSION
+    }
+
+    private val DIALOGUES_BY_GENRE: Map<Genre, Map<DialogueRole, List<String>>> = mapOf(
+        Genre.ACTION to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "What is this thing?", "Something is wrong here.", "This isn't right."
+            ),
+            DialogueRole.TENSION to listOf(
+                "Come on. Is that all?", "You picked the wrong fight.", "Stay down."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "Not while I'm still standing.", "This ends now.", "Get up. We finish this."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "It's done.", "Let's go home.", "It's over."
+            )
+        ),
+        Genre.DRAMA to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "Are you sure?", "I don't understand.", "What happened to us?"
+            ),
+            DialogueRole.TENSION to listOf(
+                "I need your help.", "Wait for me.", "I can't do this."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "Forgive me.", "Please. Not like this.", "I remember everything now."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "Goodbye.", "We made it.", "Let's start over."
+            )
+        ),
+        Genre.ROMANSA to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "Is that really you?", "I was looking for you.", "You came."
+            ),
+            DialogueRole.TENSION to listOf(
+                "Stay with me.", "Don't go.", "I was afraid of this."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "I love you.", "Choose me.", "I can't lose you."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "Stay.", "Forever, then.", "I'm home."
+            )
+        ),
+        Genre.HOROR to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "Did you hear that?", "Who's there?", "Something is here."
+            ),
+            DialogueRole.TENSION to listOf(
+                "Don't look back.", "Stay close to me.", "It's behind us."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "Run!", "It's not human.", "Don't let it take me."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "Is it over?", "We survived.", "Never again."
+            )
+        ),
+        Genre.SCI_FI to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "What is that?", "The readings are off the scale.", "It's alive."
+            ),
+            DialogueRole.TENSION to listOf(
+                "The ship is failing.", "We have minutes left.", "Cut the power."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "Initiate the sequence.", "Hold it together.", "Now!"
+            ),
+            DialogueRole.CLOSING to listOf(
+                "We made it out.", "Set course for home.", "Begin again."
+            )
+        ),
+        Genre.FANTASI to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "The old magic stirs.", "Who calls me?", "The prophecy was true."
+            ),
+            DialogueRole.TENSION to listOf(
+                "The realm is falling.", "Hold the line.", "Trust the light."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "By blade and by oath.", "The darkness ends here.", "For the kingdom!"
+            ),
+            DialogueRole.CLOSING to listOf(
+                "Peace at last.", "The realm is healed.", "A new age begins."
+            )
+        ),
+        Genre.THRILLER to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "Someone is watching us.", "This doesn't add up.", "Check the locks."
+            ),
+            DialogueRole.TENSION to listOf(
+                "You sold me out.", "It was you all along.", "Trust no one."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "The truth comes out now.", "You can't run.", "It's over."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "It's done.", "Burn it all.", "We disappear tonight."
+            )
+        ),
+        Genre.KOMEDI to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "Wait, what?", "That can't be right.", "Oh no. Not again."
+            ),
+            DialogueRole.TENSION to listOf(
+                "This is fine. Totally fine.", "Why is it always me?", "Run! I mean, walk fast!"
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "Okay, that actually worked.", "Did anyone see that?", "I meant to do that."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "We did it!", "Pizza's on me.", "Let's never speak of this."
+            )
+        ),
+        Genre.DOKUMENTER to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "Did you see that?", "Look at this.", "No one believed it."
+            ),
+            DialogueRole.TENSION to listOf(
+                "We keep filming.", "The truth is here.", "Stay with the story."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "This changes everything.", "The evidence is clear.", "There it is."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "And so it remains.", "The story continues.", "We were there."
+            )
+        ),
+        Genre.SEJARAH to mapOf(
+            DialogueRole.DISCOVERY to listOf(
+                "History remembers this day.", "Who are these people?", "The old world is gone."
+            ),
+            DialogueRole.TENSION to listOf(
+                "Hold the line.", "For those who came before.", "We cannot retreat."
+            ),
+            DialogueRole.CLIMAX to listOf(
+                "For freedom!", "This is our moment.", "History is watching."
+            ),
+            DialogueRole.CLOSING to listOf(
+                "It is done.", "A new era begins.", "We endure."
+            )
         )
-        val generic = mapOf(
-            1 to listOf("Are you sure?", "I don't understand."),
-            2 to listOf("Wait for me.", "Thank you."),
-            3 to listOf("Did you hear that?", "Stay close to me."),
-            4 to listOf("I remember now.", "It was you all along."),
-            5 to listOf("Forgive me.", "I can't do this."),
-            6 to listOf("One more time.", "I am not afraid."),
-            7 to listOf("Goodbye.", "We made it.")
-        )
-        return if (genre == Genre.ACTION) {
-            action[beatIndex] ?: emptyList()
-        } else {
-            generic[beatIndex] ?: emptyList()
-        }
+    )
+
+    fun dialoguesFor(genre: Genre, beatIndex: Int, totalBeats: Int = 8): List<String> {
+        if (beatIndex <= 0) return emptyList()
+        val role = dialogueRoleFor(beatIndex, totalBeats)
+        return DIALOGUES_BY_GENRE[genre]?.get(role) ?: emptyList()
     }
 
     fun wantsFor(beatIndex: Int): String {
@@ -758,7 +905,10 @@ object ScriptEngine {
             val clipCount = allocation.getOrElse(beatIdx) { 0 }
             if (clipCount <= 0) return@forEachIndexed
             val actions = ScriptPools.actionsForStory(input, beat.index)
-            val dialogues = ScriptPools.dialoguesFor(input.genre, beat.index)
+            // v1.4.3 — dialog per genre + per peran dramatis; totalBeats
+            // ikut supaya FIVE beat 3 = Klimaks, beat 4 = Penutup
+            // (bukan nomor beat mentah EIGHT).
+            val dialogues = ScriptPools.dialoguesFor(input.genre, beat.index, beats.size)
             val dialogueText = if (dialogues.isNotEmpty()) {
                 dialogues[(seed + beatIdx) % dialogues.size]
             } else {
