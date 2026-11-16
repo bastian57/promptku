@@ -6,14 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -25,15 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.daftech.promptku.engine.Templates
-import com.daftech.promptku.ui.DnaScreen
-import com.daftech.promptku.ui.EffectsScreen
-import com.daftech.promptku.ui.HistoryScreen
-import com.daftech.promptku.ui.ProjectScreen
 import com.daftech.promptku.ui.PromptKuTheme
 import com.daftech.promptku.ui.PromptKuViewModel
 import com.daftech.promptku.ui.QuickScreen
@@ -41,6 +30,7 @@ import com.daftech.promptku.ui.ScriptScreen
 import com.daftech.promptku.ui.TemplateScreen
 import com.daftech.promptku.ui.V2IdeaScreen
 import com.daftech.promptku.ui.V2KeysScreen
+import com.daftech.promptku.ui.V2ProjectsScreen
 import com.daftech.promptku.ui.V2PromptScreen
 import com.daftech.promptku.ui.V2Step
 import com.daftech.promptku.ui.V2StoryScreen
@@ -65,8 +55,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PromptKuApp(viewModel: PromptKuViewModel, v2ViewModel: V2ViewModel) {
     var tab by remember { mutableIntStateOf(0) }
-    // Mode Cepat v1.4 = layar pertama tab Buat; false = wizard Mode Detail.
-    var quickMode by remember { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
     val statusMessage = viewModel.statusMessage
 
@@ -77,17 +65,17 @@ fun PromptKuApp(viewModel: PromptKuViewModel, v2ViewModel: V2ViewModel) {
         }
     }
 
-    // v2.0 — tab "Cerita" (alur baru) di index 0; tab lama geser +1.
-    val tabs = listOf("Cerita", "Buat", "Template", "Proyek", "Naskah", "DNA", "Riwayat", "Efek")
+    // v2.1 — bottom bar cuma 2 tab: Cerita + Proyek. Tab lama yang dihapus
+    // (Buat/Template/Naskah/Riwayat/DNA/Efek) fungsinya PINDAH, bukan hilang:
+    // - Buat (wizard v1) -> langkah MANUAL di dalam tab Cerita
+    // - Template -> chip "Ide cepat" di Layar Ide
+    // - Naskah + Riwayat -> di dalam kartu tiap film di tab Proyek
+    // - DNA -> bank tokoh di Layar Ide ("Tokoh dari DNA")
+    // - Efek -> 100% kosakata internal engine (tidak ada lagi UI efek)
+    val tabs = listOf("Cerita", "Proyek")
     val icons = listOf(
         Icons.Filled.MenuBook,
-        Icons.Filled.Create,
-        Icons.Filled.Movie,
-        Icons.Filled.Folder,
-        Icons.Filled.Description,
-        Icons.Filled.Person,
-        Icons.Filled.History,
-        Icons.Filled.Star
+        Icons.Filled.Folder
     )
 
     Scaffold(
@@ -114,44 +102,46 @@ fun PromptKuApp(viewModel: PromptKuViewModel, v2ViewModel: V2ViewModel) {
                     V2Step.STORY -> V2StoryScreen(v2 = v2ViewModel)
                     V2Step.PROMPTS -> V2PromptScreen(v2 = v2ViewModel)
                     V2Step.KEYS -> V2KeysScreen(v2 = v2ViewModel)
-                }
-                1 -> if (quickMode) {
-                    QuickScreen(
+                    // Mode Manual (mesin v1) — alur lama tetap hidup di sini.
+                    V2Step.MANUAL -> QuickScreen(
                         viewModel = viewModel,
-                        onGoToDetail = { quickMode = false },
-                        onGoToScript = { tab = 4 }
+                        onGoToDetail = { v2ViewModel.updateStep(V2Step.MANUAL_DETAIL) },
+                        onGoToScript = { v2ViewModel.updateStep(V2Step.MANUAL_SCRIPT) }
                     )
-                } else {
-                    WizardScreen(
+                    V2Step.MANUAL_DETAIL -> WizardScreen(
                         viewModel = viewModel,
-                        onGoToTemplates = { tab = 2 },
-                        onGoToQuick = { quickMode = true }
+                        onGoToTemplates = { v2ViewModel.updateStep(V2Step.MANUAL_TEMPLATES) },
+                        onGoToQuick = { v2ViewModel.updateStep(V2Step.MANUAL) }
                     )
-                }
-                2 -> TemplateScreen(
-                    onUseTemplate = { id ->
-                        val template = Templates.all.firstOrNull { it.id == id }
-                        if (template != null) {
-                            viewModel.applyTemplate(template)
-                            quickMode = false
-                            tab = 1
+                    V2Step.MANUAL_TEMPLATES -> TemplateScreen(
+                        onUseTemplate = { id ->
+                            val template = Templates.all.firstOrNull { it.id == id }
+                            if (template != null) {
+                                viewModel.applyTemplate(template)
+                                v2ViewModel.updateStep(V2Step.MANUAL_DETAIL)
+                            }
                         }
+                    )
+                    V2Step.MANUAL_SCRIPT -> ScriptScreen(
+                        viewModel = viewModel,
+                        onGoToProjects = { v2ViewModel.updateStep(V2Step.MANUAL) }
+                    )
+                }
+                1 -> V2ProjectsScreen(
+                    v2 = v2ViewModel,
+                    onOpenBible = { id ->
+                        v2ViewModel.loadBible(id)
+                        tab = 0
+                    },
+                    onContinueSeries = { id ->
+                        v2ViewModel.continueSeries(id)
+                        tab = 0
+                    },
+                    onNewFilm = {
+                        v2ViewModel.updateStep(V2Step.IDEA)
+                        tab = 0
                     }
                 )
-                3 -> ProjectScreen(
-                    viewModel = viewModel,
-                    onGoToWizard = {
-                        quickMode = false
-                        tab = 1
-                    }
-                )
-                4 -> ScriptScreen(
-                    viewModel = viewModel,
-                    onGoToProjects = { tab = 3 }
-                )
-                5 -> DnaScreen(viewModel = viewModel)
-                6 -> HistoryScreen(viewModel = viewModel)
-                7 -> EffectsScreen()
             }
         }
     }

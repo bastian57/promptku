@@ -44,6 +44,7 @@ fun V2StoryScreen(v2: V2ViewModel) {
             Text(bible.title)
             Text("Logline: ${bible.logline}")
             Text("Genre: ${bible.genre} • Durasi: ${bible.durationMinutes} menit • ${bible.totalScenes} scene")
+            Text("Rasio: ${bible.aspectRatio} • Dialog: ${if (bible.dialogueLang == "EN") "English" else "Indonesia"}${if (bible.episodeNumber > 1) " • Episode ${bible.episodeNumber}" else ""}")
             if (v2.isOfflineDraft) {
                 Text("DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")
             }

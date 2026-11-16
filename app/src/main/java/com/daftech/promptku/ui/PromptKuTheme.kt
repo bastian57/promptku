@@ -1,49 +1,36 @@
 package com.daftech.promptku.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Tema PromptKu — teal (kunci) + oranye (grade hangat), kontras tinggi
-// supaya chip dan tombol kebaca tanpa trik. Semua tombol utama terlihat
-// langsung di layar, tidak ada yang disembunyikan (pelajaran SuaraKu v1.6.0).
+// Tema PromptKu v2.1 — Dark Cinematic + Neon Purple (dari mockup yang
+// disetujui Putra 16 Nov). Selalu gelap, bukan ikut sistem: latar nyaris
+// hitam ungu, kartu ungu gelap, aksen ungu neon di tombol + chip aktif.
 private val PromptKuDark = darkColorScheme(
-    primary = Color(0xFF4DB6AC),
-    onPrimary = Color(0xFF00332E),
-    primaryContainer = Color(0xFF004D47),
-    secondary = Color(0xFFFF8A65),
-    onSecondary = Color(0xFF3D0C00),
-    tertiary = Color(0xFFFFCC80),
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    onBackground = Color(0xFFEDEDED),
-    onSurface = Color(0xFFEDEDED)
-)
-
-private val PromptKuLight = lightColorScheme(
-    primary = Color(0xFF00796B),
+    primary = Color(0xFFA855F7),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFB2DFDB),
-    secondary = Color(0xFFE64A19),
-    onSecondary = Color(0xFFFFFFFF),
-    tertiary = Color(0xFFFF8A65),
-    background = Color(0xFFFAFAFA),
-    surface = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1A1A1A),
-    onSurface = Color(0xFF1A1A1A)
+    primaryContainer = Color(0xFF7C3AED),
+    onPrimaryContainer = Color(0xFFFFFFFF),
+    secondary = Color(0xFFC084FC),
+    onSecondary = Color(0xFF1A0B2E),
+    tertiary = Color(0xFFE9D5FF),
+    background = Color(0xFF0D0B14),
+    surface = Color(0xFF1B1826),
+    onBackground = Color(0xFFF2F0FA),
+    onSurface = Color(0xFFF2F0FA),
+    surfaceVariant = Color(0xFF241F33),
+    onSurfaceVariant = Color(0xFF9A94B0),
+    outline = Color(0xFF2C2740)
 )
 
 @Composable
 fun PromptKuTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) PromptKuDark else PromptKuLight
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = PromptKuDark,
         content = content
     )
 }

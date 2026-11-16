@@ -626,9 +626,10 @@ fun ScriptSceneItem.toDraftScene(): DraftScene {
 @Database(
     entities = [
         HistoryItem::class, DnaItem::class, ProjectItem::class, SceneItem::class,
-        ScriptItem::class, ScriptSceneItem::class, V2BibleItem::class, V2SceneItem::class
+        ScriptItem::class, ScriptSceneItem::class, V2BibleItem::class, V2SceneItem::class,
+        V2DnaItem::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class PromptKuDatabase : RoomDatabase() {
@@ -638,6 +639,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
     abstract fun scriptDao(): ScriptDao
     abstract fun v2BibleDao(): V2BibleDao
     abstract fun v2SceneDao(): V2SceneDao
+    abstract fun v2DnaDao(): V2DnaDao
 
     companion object {
         @Volatile
@@ -649,7 +651,7 @@ abstract class PromptKuDatabase : RoomDatabase() {
                     context.applicationContext,
                     PromptKuDatabase::class.java,
                     "promptku.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { instance = it }
             }
         }
     }

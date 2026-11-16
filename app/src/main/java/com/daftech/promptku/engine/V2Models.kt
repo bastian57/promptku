@@ -65,7 +65,11 @@ data class StoryBible(
     val durationMinutes: Int,
     /** Chip konfirmasi (bisa diubah user): tebakan yang dipakai Director. */
     val isCourier: Boolean = false,
-    val sourceIdea: String = ""
+    val sourceIdea: String = "",
+    /** v2.1 — pilihan user di Layar Ide (bukan tebakan LLM). */
+    val aspectRatio: String = "9:16",
+    val dialogueLang: String = "ID",
+    val episodeNumber: Int = 1
 ) {
     val hero: V2Character? get() = characters.firstOrNull()
     /** Jumlah scene flat (aturan Putra: 1 menit = 6 scene @10 detik). */
@@ -96,7 +100,9 @@ data class V2ScenePlan(
     val effectId: String,
     val wantEn: String,
     val obstacleEn: String,
-    val transitionEn: String
+    val transitionEn: String,
+    /** v2.1 — narasi voiceover per scene (Indonesia, gaya Nalar) untuk SuaraKu. */
+    val narrationId: String = ""
 )
 
 /** Satu scene SETELAH render lokal + gerbang validasi. */
@@ -108,7 +114,9 @@ data class V2ScenePrompt(
     val seedanceText: String,
     val wanText: String,
     val needsReview: Boolean = false,
-    val reviewReason: String = ""
+    val reviewReason: String = "",
+    /** v2.1 — user menandai scene ini sudah disetujui (tombol Setuju). */
+    val approved: Boolean = false
 )
 
 object V2Models {
@@ -167,7 +175,11 @@ object V2Models {
             episodes = episodes,
             durationMinutes = (obj.num("duration_minutes")?.toInt() ?: 3).coerceIn(1, 10),
             isCourier = obj.bool("is_courier") ?: false,
-            sourceIdea = obj.str("source_idea").orEmpty()
+            sourceIdea = obj.str("source_idea").orEmpty(),
+            // v2.1 — default aman untuk bible lama (cache fix7 ke bawah).
+            aspectRatio = obj.str("aspect_ratio")?.takeIf { it == "16:9" || it == "9:16" } ?: "9:16",
+            dialogueLang = obj.str("dialogue_lang")?.takeIf { it == "EN" || it == "ID" } ?: "ID",
+            episodeNumber = (obj.num("episode_number")?.toInt() ?: 1).coerceAtLeast(1)
         )
     }
 
@@ -206,7 +218,10 @@ object V2Models {
         }.toTypedArray()),
         "duration_minutes" to Json.numOf(bible.durationMinutes),
         "is_courier" to Json.boolOf(bible.isCourier),
-        "source_idea" to Json.strOf(bible.sourceIdea)
+        "source_idea" to Json.strOf(bible.sourceIdea),
+        "aspect_ratio" to Json.strOf(bible.aspectRatio),
+        "dialogue_lang" to Json.strOf(bible.dialogueLang),
+        "episode_number" to Json.numOf(bible.episodeNumber)
     )
 
     fun visionFromJson(obj: Json.Obj, imageIndex: Int): V2VisionDesc? {
@@ -243,7 +258,8 @@ object V2Models {
                 effectId = o.str("effect_id").orEmpty(),
                 wantEn = o.str("want_en").orEmpty(),
                 obstacleEn = o.str("obstacle_en").orEmpty(),
-                transitionEn = o.str("transition_en").orEmpty()
+                transitionEn = o.str("transition_en").orEmpty(),
+                narrationId = o.str("narration_id").orEmpty()
             )
         }.sortedBy { it.sceneNumber }
 
@@ -260,6 +276,7 @@ object V2Models {
         "effect_id" to Json.strOf(plan.effectId),
         "want_en" to Json.strOf(plan.wantEn),
         "obstacle_en" to Json.strOf(plan.obstacleEn),
-        "transition_en" to Json.strOf(plan.transitionEn)
+        "transition_en" to Json.strOf(plan.transitionEn),
+        "narration_id" to Json.strOf(plan.narrationId)
     )
 }

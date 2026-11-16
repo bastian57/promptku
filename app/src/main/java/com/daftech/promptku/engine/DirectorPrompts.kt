@@ -31,12 +31,18 @@ object DirectorPrompts {
         "have WANT + OBSTACLE + TURN. Never invent a franchise character. Reply with JSON only, " +
         "no markdown, no extra text."
 
-    /** Bible JSON. [idea] = ide user (Indonesia). [vision] = deskripsi gambar (boleh kosong). */
+    /** Bible JSON. [idea] = ide user (Indonesia). [vision] = deskripsi gambar (boleh kosong).
+     *  v2.1 — [aspectRatio]/[dialogueLang]/[genreHint] = pilihan user di Layar Ide
+     *  (bukan tebakan LLM); [continuationOf] = bible episode sebelumnya (Mode Series). */
     fun directorUser(
         idea: String,
         durationMinutes: Int,
         vision: List<V2VisionDesc>,
-        isCourierHint: Boolean
+        isCourierHint: Boolean,
+        aspectRatio: String = "9:16",
+        dialogueLang: String = "ID",
+        genreHint: Genre? = null,
+        continuationOf: StoryBible? = null
     ): String {
         val visionBlock = if (vision.isEmpty()) {
             "No reference images. Invent the hero and world from the idea, with concrete visual anchors."
@@ -47,10 +53,35 @@ object DirectorPrompts {
                         "setting: ${v.settingEn}; palette: ${v.paletteEn}"
                 }
         }
+        val settingsBlock = buildString {
+            if (genreHint != null) append("Genre (user's choice — use exactly this): ${genreHint.name}.\n")
+            append(
+                if (aspectRatio == "16:9") "Aspect ratio: 16:9 — widescreen video for YouTube; compose every shot for horizontal framing.\n"
+                else "Aspect ratio: 9:16 — vertical video for Shorts/TikTok; compose every shot for vertical framing.\n"
+            )
+            append(
+                if (dialogueLang == "EN") "Dialogue language: English — dialogue_en is the primary line, dialogue_id its Indonesian translation.\n"
+                else "Dialogue language: Indonesian — dialogue_id is the primary line, dialogue_en its English translation.\n"
+            )
+        }
+        val continuationBlock = if (continuationOf == null) "" else {
+            val prev = continuationOf
+            val lastBeat = prev.beats.maxByOrNull { it.index }?.summaryEn.orEmpty()
+            "THIS IS EPISODE ${prev.episodeNumber + 1} of the same film (previous episode: \"${prev.title}\").\n" +
+                "Keep the SAME world, hero, antagonist, light and ambience wording EXACTLY as below — do not reinvent them:\n" +
+                "Hero: ${prev.hero?.name.orEmpty()} (anchors: ${prev.hero?.anchorsEn?.joinToString("; ").orEmpty()}).\n" +
+                "Antagonist: ${prev.antagonistName} — ${prev.antagonistDescEn}.\n" +
+                "World: ${prev.worldName} — ${prev.worldDescEn}. Light: ${prev.lightEn}. Ambience: ${prev.ambienceEn}.\n" +
+                "New episode title: \"${prev.title} — Episode ${prev.episodeNumber + 1}\".\n" +
+                "The story continues right after the previous ending ($lastBeat). " +
+                "New beats must continue the arc, not restart it.\n"
+        }
         return "Idea (Indonesian): \"$idea\"\n" +
             "Duration: $durationMinutes minutes. One scene = one 10-second clip, " +
             "${durationMinutes * 6} scenes total, flat list, no nested shots.\n" +
             "$visionBlock\n" +
+            settingsBlock +
+            continuationBlock +
             "Courier-story hint from a keyword check: is_courier=$isCourierHint " +
             "(true ONLY if the idea is really about a courier/delivery; correct it if wrong).\n" +
             "Reply with this exact JSON shape:\n" +
@@ -85,11 +116,14 @@ object DirectorPrompts {
         "character card itself. Never name a franchise character. Reply with JSON only, " +
         "no markdown, no extra text."
 
-    /** Satu batch scene. [sceneNumbers] = nomor scene yang diminta (1-based). */
+    /** Satu batch scene. [sceneNumbers] = nomor scene yang diminta (1-based).
+     *  v2.1 — [retryReasons]: alasan gerbang yang gagal per scene (retry gerbang
+     *  6 / regenerasi 1 scene) — prompter wajib memperbaiki TEPAT masalah itu. */
     fun prompterUser(
         bible: StoryBible,
         sceneNumbers: List<Int>,
-        previousExit: String
+        previousExit: String,
+        retryReasons: Map<Int, String> = emptyMap()
     ): String {
         val hero = bible.hero
         val heroBlock = if (hero == null) "No hero defined."
@@ -100,14 +134,22 @@ object DirectorPrompts {
         val beatsBlock = bible.beats.joinToString("\n") { b ->
             "- beat ${b.index} ${b.name}: ${b.summaryEn}"
         }
+        val retryBlock = if (retryReasons.isEmpty()) "" else
+            "RETRY — the following scenes failed validation. Fix EXACTLY these problems, " +
+                "keep everything else (same world, same continuity):\n" +
+                retryReasons.entries.sortedBy { it.key }.joinToString("\n") { (num, reason) ->
+                    "- Scene $num: $reason"
+                } + "\n"
         return "Story bible:\n" +
             "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
             "$heroBlock\n$antagonistBlock\n" +
             "World (use these exact words in every scene's context, the app enforces it): " +
             "${bible.worldDescEn}. Light: ${bible.lightEn}. Ambience: ${bible.ambienceEn}.\n" +
+            "Aspect ratio: ${bible.aspectRatio} — compose every shot for that framing.\n" +
             "Beats:\n$beatsBlock\n" +
             "Previous scene exit state (continuity — this scene's entry must match it): " +
             "$previousExit\n" +
+            retryBlock +
             "Write scene plans for scene numbers ${sceneNumbers.joinToString(", ")} as a JSON ARRAY " +
             "of objects, one per scene, in order:\n" +
             "[{\"scene_number\": 1, \"action_en\": \"...\", " +
@@ -117,10 +159,16 @@ object DirectorPrompts {
             "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty)\", " +
             "\"dialogue_en\": \"... (English version of the same line, or empty)\", " +
             "\"audio_en\": \"sound effects + ambience for this clip\", " +
+            "\"narration_id\": \"... (warm documentary voiceover in Indonesian, 1-2 sentences, Nalar tone, or empty)\", " +
             "\"effect_id\": \"\" (leave empty — the app assigns effects from its internal vocabulary), " +
             "\"want_en\": \"...\", \"obstacle_en\": \"...\", \"transition_en\": \"...\"}]\n" +
             "Rules: fight moves must be DIFFERENT in every scene of the film (never repeat a " +
             "punch/kick/grapple verbatim); the closing scene is aftermath, no big fight; " +
-            "dialogue only in scenes where the beat needs it (most scenes: empty dialogue)."
+            "dialogue only in scenes where the beat needs it (most scenes: empty dialogue); " +
+            "include short dialogue in at least 1 scene of this batch, unless the beat is purely visual; " +
+            "action_en = ONE action only — never paste the world description, setting, or a list " +
+            "of places into action_en (the app pastes the world itself); " +
+            "narration_id is a voiceover line for the narrator app, NOT dialogue — never put " +
+            "dialogue words into narration_id."
     }
 }

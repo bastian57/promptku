@@ -66,23 +66,42 @@ class V2Pipeline(
         return out to null
     }
 
-    /** Director: ide -> bible JSON. */
+    /** Director: ide -> bible JSON.
+     *  v2.1 fix6 — isCourier DIPAKSA dari keyword hint, bukan dari JSON LLM
+     *  (director pernah menulis is_courier=true untuk cerita alien Frieza
+     *  padahal hint=false — chip jadi "Kisah kurir? YA" yang salah; user
+     *  tetap bisa membalik chip manual di Layar Cerita). Pilihan user
+     *  (aspek/bahasa/genre/episode) juga ditempel di sini, bukan dari LLM. */
     fun developStory(
         idea: String,
         durationMinutes: Int,
         vision: List<V2VisionDesc>,
-        isCourierHint: Boolean
+        isCourierHint: Boolean,
+        aspectRatio: String = "9:16",
+        dialogueLang: String = "ID",
+        genreHint: Genre? = null,
+        continuationOf: StoryBible? = null
     ): Pair<StoryBible?, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
             buildPrompt = {
-                DirectorPrompts.directorUser(idea, durationMinutes, vision, isCourierHint)
+                DirectorPrompts.directorUser(
+                    idea, durationMinutes, vision, isCourierHint,
+                    aspectRatio, dialogueLang, genreHint, continuationOf
+                )
             }
         )
         return when (result) {
             is V2Call.Ok -> {
                 val obj = JsonLite.extractFirstObject(result.text)
-                val bible = obj?.let { V2Models.bibleFromJson(it) }
+                val parsed = obj?.let { V2Models.bibleFromJson(it) }
+                val bible = parsed?.copy(
+                    isCourier = isCourierHint,
+                    aspectRatio = aspectRatio,
+                    dialogueLang = dialogueLang,
+                    genre = genreHint ?: parsed.genre,
+                    episodeNumber = (continuationOf?.episodeNumber ?: 0) + 1
+                )
                 if (bible != null) bible to null
                 else null to V2Call.Fail(
                     "Sutradara mengembalikan cerita yang tidak bisa dibaca — coba lagi.",
@@ -93,7 +112,9 @@ class V2Pipeline(
         }
     }
 
-    /** Revisi bible 1 putaran (instruksi user). */
+    /** Revisi bible 1 putaran (instruksi user). Pilihan yang sudah dikunci
+     *  user (chip kurir, aspek, bahasa, genre, nomor episode) dipertahankan
+     *  — revisi tidak boleh menimpa keputusan user dengan tebakan LLM. */
     fun reviseStory(bible: StoryBible, instruction: String): Pair<StoryBible?, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
@@ -102,7 +123,14 @@ class V2Pipeline(
         return when (result) {
             is V2Call.Ok -> {
                 val obj = JsonLite.extractFirstObject(result.text)
-                val revised = obj?.let { V2Models.bibleFromJson(it) }
+                val parsed = obj?.let { V2Models.bibleFromJson(it) }
+                val revised = parsed?.copy(
+                    isCourier = bible.isCourier,
+                    aspectRatio = bible.aspectRatio,
+                    dialogueLang = bible.dialogueLang,
+                    genre = bible.genre,
+                    episodeNumber = bible.episodeNumber
+                )
                 if (revised != null) revised to null
                 else null to V2Call.Fail(
                     "Revisi sutradara tidak bisa dibaca — coba lagi.",
@@ -113,22 +141,29 @@ class V2Pipeline(
         }
     }
 
-    /** Prompter: satu batch scene saja (dipakai retry gerbang 6). */
+    /** Prompter: satu batch scene saja (dipakai retry gerbang 6 + regenerasi
+     *  1 scene). [retryReasons] = alasan gerbang per scene — prompter wajib
+     *  memperbaiki TEPAT masalah itu (v2.1 fix6: instruksi retry generik
+     *  "fix the flagged issues" adalah alasan retry S5 Zenith gagal). */
     fun buildPromptBatch(
         bible: StoryBible,
         sceneNumbers: List<Int>,
-        previousExit: String
+        previousExit: String,
+        retryReasons: Map<Int, String> = emptyMap()
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
             buildPrompt = {
-                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit)
+                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons)
             }
         )
         return when (result) {
             is V2Call.Ok -> {
                 val arr = JsonLite.extractFirstArray(result.text)
+                // v2.1 fix6 — bersihkan aksi bocor (deskripsi dunia verbatim,
+                // nama di awal aksi) begitu diterima, sebelum disimpan/render.
                 val plans = arr?.let { V2Models.scenePlansFromJson(it) }.orEmpty()
+                    .map { it.copy(actionEn = ModeRender.sanitizeAction(it.actionEn, bible)) }
                 if (plans.isEmpty()) {
                     emptyList<V2ScenePlan>() to V2Call.Fail(
                         "Prompter mengembalikan scene kosong untuk scene ${sceneNumbers.joinToString(", ")} — coba lagi.",

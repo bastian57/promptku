@@ -16,9 +16,11 @@ import com.daftech.promptku.data.ExportHelper
 import com.daftech.promptku.data.LlmTransportOkHttp
 import com.daftech.promptku.data.PromptKuDatabase
 import com.daftech.promptku.data.V2BibleItem
+import com.daftech.promptku.data.V2DnaItem
 import com.daftech.promptku.data.V2SceneItem
 import com.daftech.promptku.engine.EffectLibrary
 import com.daftech.promptku.engine.GateResult
+import com.daftech.promptku.engine.Genre
 import com.daftech.promptku.engine.JsonLite
 import com.daftech.promptku.engine.ModeRender
 import com.daftech.promptku.engine.QuotaTracker
@@ -26,6 +28,7 @@ import com.daftech.promptku.engine.ScriptEngine
 import com.daftech.promptku.engine.ScriptPools
 import com.daftech.promptku.engine.StoryBible
 import com.daftech.promptku.engine.StoryInfer
+import com.daftech.promptku.engine.TargetEngine
 import com.daftech.promptku.engine.V2Beat
 import com.daftech.promptku.engine.V2Character
 import com.daftech.promptku.engine.V2Episode
@@ -52,7 +55,12 @@ import java.util.Locale
 // Aturan state (sama seperti ViewModel lama): tulis Compose state HANYA
 // dari Main. Kerja network/DB jalan di Dispatchers.IO, hasilnya
 // ditugaskan kembali di Main. Fungsi update dinamai updateXxx.
-enum class V2Step { IDEA, STORY, PROMPTS, KEYS }
+enum class V2Step {
+    IDEA, STORY, PROMPTS, KEYS,
+    // v2.1 — Mode Manual (mesin v1) tinggal sebagai langkah di dalam tab
+    // Cerita, bukan tab sendiri: Quick -> Wizard -> Template -> Naskah.
+    MANUAL, MANUAL_DETAIL, MANUAL_TEMPLATES, MANUAL_SCRIPT
+}
 
 data class V2Image(
     val uri: Uri,
@@ -105,17 +113,50 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var savedBibles by mutableStateOf<List<V2BibleItem>>(emptyList())
         private set
+    // v2.1 — ringkasan per bible untuk kartu tab Proyek (jumlah scene,
+    // berapa yang ditandai, durasi, nomor episode).
+    data class V2BibleSummary(
+        val sceneCount: Int,
+        val flaggedCount: Int,
+        val durationMinutes: Int,
+        val episodeNumber: Int
+    )
+    var bibleSummaries by mutableStateOf<Map<Long, V2BibleSummary>>(emptyMap())
+        private set
+    // v2.1 — pilihan film di Layar Ide (aspek/bahasa/genre).
+    var aspectRatio by mutableStateOf("9:16")
+        private set
+    var dialogueLang by mutableStateOf("ID")
+        private set
+    var genreHint by mutableStateOf<Genre?>(null)
+        private set
+    // v2.1 — Bank Tokoh DNA (Room v2_dna) + pilihan Hero/Antagonis.
+    var dnaCharacters by mutableStateOf<List<V2DnaItem>>(emptyList())
+        private set
+    var selectedDnaIds by mutableStateOf<List<Long>>(emptyList())
+        private set
+    // v2.1 — dialog "Simpan ke DNA" (index gambar + nama tokoh).
+    var dnaDialogIndex by mutableStateOf<Int?>(null)
+        private set
+    var dnaDialogName by mutableStateOf("")
+        private set
+    // v2.1 — Mode Series: bible episode sebelumnya (dihapus setelah develop).
+    private var seriesContinuation: StoryBible? = null
 
     init {
         refreshKeyState()
         refreshQuota()
         loadSavedBibles()
+        loadDna()
     }
 
     fun updateIdea(value: String) { idea = value }
     fun updateDuration(value: Int) { durationMinutes = value.coerceIn(1, 10) }
     fun updateStep(value: V2Step) { step = value }
     fun clearStatusMessage() { statusMessage = "" }
+    fun updateAspectRatio(value: String) { aspectRatio = if (value == "16:9") "16:9" else "9:16" }
+    fun updateDialogueLang(value: String) { dialogueLang = if (value == "EN") "EN" else "ID" }
+    fun updateGenreHint(value: Genre?) { genreHint = value }
 
     private fun today(): String =
         SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -200,15 +241,22 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = "Belum ada gambar — tambah dulu, atau langsung Kembangkan Cerita tanpa gambar."
             return
         }
+        // v2.1 — gambar yang sudah dideskripsikan (termasuk tokoh DNA yang
+        // vision-nya sudah terisi) JANGAN dideskripsikan ulang: hemat kuota
+        // dan deskripsi DNA tidak tertimpa hasil baru.
+        val pending = images.mapIndexedNotNull { i, img ->
+            if (img.vision == null) i to img.base64 else null
+        }
+        if (pending.isEmpty()) {
+            statusMessage = "Semua gambar sudah dideskripsikan."
+            return
+        }
         viewModelScope.launch {
             busy = true
             progress = "Mendeskripsikan gambar (Groq Vision)..."
             try {
                 val (descs, fail) = withContext(Dispatchers.IO) {
-                    pipeline().describeImages(
-                        images.mapIndexed { i, img -> i to img.base64 },
-                        images.map { it.label }
-                    )
+                    pipeline().describeImages(pending, images.map { it.label })
                 }
                 if (fail != null && descs.isEmpty()) {
                     statusMessage = fail.message
@@ -235,6 +283,100 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---------- Bank Tokoh DNA (v2.1) ----------
+
+    fun loadDna() {
+        viewModelScope.launch {
+            dnaCharacters = withContext(Dispatchers.IO) { db.v2DnaDao().all() }
+        }
+    }
+
+    /** Pilih/batalkan tokoh DNA. Tap ke-1 = Hero, tap ke-2 = Antagonis.
+     *  Tokoh terpilih ikut masuk daftar gambar referensi (vision sudah
+     *  terisi dari DNA) supaya Mode B + director memakainya langsung. */
+    fun toggleDnaSelection(id: Long) {
+        val char = dnaCharacters.firstOrNull { it.id == id } ?: return
+        if (id in selectedDnaIds) {
+            selectedDnaIds = selectedDnaIds - id
+            images = images.filterNot { it.base64 == char.imageBase64 }
+            return
+        }
+        if (selectedDnaIds.size >= 2) {
+            statusMessage = "Maksimal 2 tokoh DNA (Hero + Antagonis)."
+            return
+        }
+        if (images.size >= 3) {
+            statusMessage = "Maksimal 3 gambar referensi — hapus satu dulu."
+            return
+        }
+        selectedDnaIds = selectedDnaIds + id
+        val vision = V2VisionDesc(
+            imageIndex = images.size,
+            label = char.name,
+            subjectName = char.name,
+            anchorsEn = char.anchorsEn.split(";").map { it.trim() }.filter { it.isNotBlank() },
+            settingEn = "",
+            paletteEn = "",
+            notesEn = char.descriptionEn
+        )
+        images = images + V2Image(Uri.EMPTY, char.imageBase64, char.name, vision)
+    }
+
+    fun openDnaDialog(index: Int) {
+        val img = images.getOrNull(index) ?: return
+        if (img.vision == null) {
+            statusMessage = "Deskripsikan dulu gambarnya (tombol Deskripsikan Gambar)."
+            return
+        }
+        dnaDialogIndex = index
+        dnaDialogName = img.vision.subjectName.ifBlank { img.label }
+    }
+
+    fun updateDnaDialogName(value: String) { dnaDialogName = value }
+
+    fun dismissDnaDialog() {
+        dnaDialogIndex = null
+        dnaDialogName = ""
+    }
+
+    fun saveImageToDna() {
+        val index = dnaDialogIndex ?: return
+        val img = images.getOrNull(index) ?: return
+        val vision = img.vision ?: return
+        val name = dnaDialogName.trim()
+        if (name.isBlank()) {
+            statusMessage = "Isi dulu nama tokohnya."
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            db.v2DnaDao().insert(
+                V2DnaItem(
+                    name = name,
+                    descriptionEn = vision.notesEn.ifBlank { vision.anchorsEn.joinToString("; ") },
+                    anchorsEn = vision.anchorsEn.joinToString(";"),
+                    imageBase64 = img.base64,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            loadDna()
+            withContext(Dispatchers.Main) {
+                dnaDialogIndex = null
+                dnaDialogName = ""
+                statusMessage = "\"$name\" tersimpan di DNA — bisa dipakai di film berikutnya."
+            }
+        }
+    }
+
+    fun deleteDnaCharacter(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.v2DnaDao().delete(id)
+            loadDna()
+            withContext(Dispatchers.Main) {
+                selectedDnaIds = selectedDnaIds - id
+            }
+        }
+    }
+
     // ---------- Director ----------
 
     fun developStory() {
@@ -254,8 +396,12 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val vision = images.mapNotNull { it.vision }
                 val hint = V2Pipeline.isCourierHint(trimmed)
+                val continuation = seriesContinuation
                 val (result, fail) = withContext(Dispatchers.IO) {
-                    pipeline().developStory(trimmed, durationMinutes, vision, hint)
+                    pipeline().developStory(
+                        trimmed, durationMinutes, vision, hint,
+                        aspectRatio, dialogueLang, genreHint, continuation
+                    )
                 }
                 if (fail != null) {
                     statusMessage = fail.message + " (Draft offline tetap bisa dipakai — tombol di bawah.)"
@@ -264,6 +410,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 if (result != null) {
                     bible = result
                     isOfflineDraft = false
+                    seriesContinuation = null
                     withContext(Dispatchers.IO) { saveBible(result, trimmed) }
                     loadSavedBibles()
                     step = V2Step.STORY
@@ -306,7 +453,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 val builtBible = StoryBible(
                     title = input.title,
                     logline = trimmedIdea,
-                    genre = inference.genre,
+                    genre = genreHint ?: inference.genre,
                     characters = listOf(
                         V2Character(
                             name = heroName,
@@ -327,7 +474,9 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     ),
                     durationMinutes = durationMinutes,
                     isCourier = ScriptPools.isCourierStory(trimmedIdea),
-                    sourceIdea = trimmedIdea
+                    sourceIdea = trimmedIdea,
+                    aspectRatio = aspectRatio,
+                    dialogueLang = dialogueLang
                 )
                 val plans = draft.scenes.map { scene ->
                     V2ScenePlan(
@@ -360,6 +509,46 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = "DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final."
             busy = false
             progress = ""
+        }
+    }
+
+    /** Mode Series (v2.1): siapkan episode berikutnya dari bible yang sudah
+     *  ada — dunia, tokoh, cahaya, dan ambience dibawa verbatim oleh Director
+     *  (lihat DirectorPrompts.directorUser, blok continuation). User tinggal
+     *  tap Kembangkan Cerita di Layar Ide. */
+    fun continueSeries(bibleId: Long) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val item = withContext(Dispatchers.IO) { db.v2BibleDao().byId(bibleId) }
+                if (item == null) {
+                    statusMessage = "Cerita tidak ditemukan di cache."
+                    return@launch
+                }
+                val parsed = runCatching {
+                    JsonLite.parse(item.bibleJson) as? com.daftech.promptku.engine.Json.Obj
+                }.getOrNull()?.let { com.daftech.promptku.engine.V2Models.bibleFromJson(it) }
+                if (parsed == null) {
+                    statusMessage = "Cerita tidak bisa dibaca dari cache."
+                    return@launch
+                }
+                seriesContinuation = parsed
+                idea = "Lanjutan ${parsed.title} — episode berikutnya"
+                durationMinutes = parsed.durationMinutes
+                images = emptyList()
+                selectedDnaIds = emptyList()
+                bible = null
+                scenes = emptyList()
+                gates = emptyList()
+                step = V2Step.IDEA
+                statusMessage = "Lanjutan Episode ${parsed.episodeNumber + 1}: dunia, tokoh, dan cahaya \"${parsed.title}\" dibawa verbatim. Tap Kembangkan Cerita."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal menyiapkan episode lanjutan: ${e.message}"
+            } finally {
+                busy = false
+            }
         }
     }
 
@@ -469,18 +658,30 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     statusMessage = fail.message
                     return@launch
                 }
-                var rendered = ModeRender.renderAll(current, plans, mode, isFight)
+                var rendered = ModeRender.renderAll(current, plans, mode, isFight, images.size)
                 var gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
                 // Gerbang 6: coba ulang 1x scene yang gagal (kecuali G4 — itu
                 // soal render, bukan soal LLM), lalu tandai sisanya.
                 val failedNums = gateSceneNumbers(gateResults, excludeG4 = true)
                 if (failedNums.isNotEmpty()) {
                     progress = "Mengulang ${failedNums.size} scene yang gagal gerbang..."
+                    // v2.1 fix6 — alasan gerbang yang SEBENARNYA ikut ke prompt
+                    // retry (bukan "fix the flagged issues" yang generik).
+                    val retryReasons = gateResults
+                        .filter { it.id != "G4" && it.id != "G6" }
+                        .flatMap { it.failures }
+                        .mapNotNull { failure ->
+                            Regex("Scene (\\d+): (.*)").find(failure)?.let {
+                                it.groupValues[1].toIntOrNull() to it.groupValues[2]
+                            }
+                        }
+                        .groupBy({ it.first }, { it.second })
+                        .mapValues { it.value.joinToString("; ") }
                     val prevExit = "Retry for scenes ${failedNums.joinToString(", ")}: keep continuity, fix the flagged issues."
                     val (retryPlans, _) = withContext(Dispatchers.IO) {
                         try {
                             withTimeout(300_000L) {
-                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit)
+                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons)
                             }
                         } catch (e: TimeoutCancellationException) {
                             // Retry nyangkut: pakai hasil pertama, jangan hang.
@@ -488,7 +689,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     if (retryPlans.isNotEmpty()) {
-                        val retryRendered = ModeRender.renderAll(current, retryPlans, mode, isFight)
+                        val retryRendered = ModeRender.renderAll(current, retryPlans, mode, isFight, images.size)
                         val byNum = retryRendered.associateBy { it.sceneNumber }
                         rendered = rendered.map { scene -> byNum[scene.sceneNumber] ?: scene }
                         gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
@@ -496,7 +697,10 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val stillFailing = gateSceneNumbers(gateResults, excludeG4 = false)
                 if (stillFailing.isNotEmpty()) {
-                    val reasons = gateResults.filter { !it.passed }
+                    // v2.1 fix6 — G6 dikecualikan: "Scene N: gagal gerbang tapi
+                    // tidak ditandai" adalah keluhan diri sendiri yang basi
+                    // (ditangkap SEBELUM penandaan) — cuma noise di export.
+                    val reasons = gateResults.filter { it.id != "G6" && !it.passed }
                         .flatMap { it.failures }.joinToString("; ")
                     rendered = rendered.map { scene ->
                         if (scene.sceneNumber in stillFailing) {
@@ -538,6 +742,82 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         statusMessage = "Dibatalkan — cerita tersimpan di tab Cerita, bisa diulang kapan saja."
     }
 
+    /** Regenerasi 1 scene (v2.1 inovasi #1): ganti SATU scene yang jelek tanpa
+     *  mengulang 18 scene (10+ menit). Alasan gerbang scene itu ikut ke prompt
+     *  supaya perbaikan tepat sasaran; efek baru diambil dari kosakata internal
+     *  yang BELUM dipakai scene lain (assignEffects dengan daftar penuh). */
+    fun regenerateScene(sceneNumber: Int) {
+        val current = bible ?: return
+        if (scenes.none { it.sceneNumber == sceneNumber }) return
+        buildJob = viewModelScope.launch {
+            busy = true
+            progress = "Mengulang scene $sceneNumber..."
+            try {
+                val mode = if (images.isNotEmpty()) V2Mode.REFERENCE else V2Mode.TEXT_ONLY
+                val isFight = current.genre == Genre.ACTION ||
+                    EffectLibrary.detect(current.sourceIdea).fight
+                val prevPlan = scenes.filter { it.sceneNumber < sceneNumber }
+                    .maxByOrNull { it.sceneNumber }?.plan
+                val previousExit = prevPlan?.let {
+                    "Scene ${it.sceneNumber} ends: ${it.actionEn}. ${it.transitionEn}"
+                } ?: "Opening: ${current.beats.firstOrNull()?.summaryEn.orEmpty()}"
+                val reasons = gates.filter { it.id != "G6" }.flatMap { it.failures }
+                    .filter { it.contains("Scene $sceneNumber:") }
+                val retryReasons = if (reasons.isEmpty()) emptyMap()
+                else mapOf(sceneNumber to reasons.joinToString("; "))
+                val (newPlans, fail) = withContext(Dispatchers.IO) {
+                    try {
+                        withTimeout(300_000L) {
+                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons)
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        emptyList<V2ScenePlan>() to V2Call.Fail(
+                            "Regenerasi scene $sceneNumber timeout 5 menit — coba lagi.",
+                            retryable = true
+                        )
+                    }
+                }
+                if (fail != null || newPlans.isEmpty()) {
+                    statusMessage = fail?.message ?: "Regenerasi scene $sceneNumber gagal — coba lagi."
+                    return@launch
+                }
+                val fresh = newPlans.first()
+                val allPlans = scenes.map { it.plan }
+                    .map { if (it.sceneNumber == sceneNumber) fresh.copy(effectId = "") else it }
+                val assigned = ModeRender.assignEffects(
+                    allPlans, isFight, current.beats.size.coerceAtLeast(1)
+                )
+                val newPlan = assigned.firstOrNull { it.sceneNumber == sceneNumber } ?: fresh
+                val rendered = ModeRender.renderScene(current, newPlan, mode, images.size)
+                    .copy(approved = false)
+                scenes = scenes.map { if (it.sceneNumber == sceneNumber) rendered else it }
+                gates = ValidationGates.runGates(current, scenes, images.isNotEmpty())
+                withContext(Dispatchers.IO) { saveScenes(current, scenes) }
+                statusMessage = "Scene $sceneNumber dibuat ulang."
+                refreshQuota()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusMessage = "Gagal mengulang scene $sceneNumber: ${e.message}"
+            } finally {
+                busy = false
+                progress = ""
+            }
+        }
+    }
+
+    /** Tandai/batalkan persetujuan 1 scene (tombol Setuju di layar Prompt). */
+    fun toggleSceneApproval(sceneNumber: Int) {
+        scenes = scenes.map {
+            if (it.sceneNumber == sceneNumber) it.copy(approved = !it.approved) else it
+        }
+        val approved = scenes.firstOrNull { it.sceneNumber == sceneNumber }?.approved ?: return
+        val id = savedBibleId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            db.v2SceneDao().setApproved(id, sceneNumber, approved)
+        }
+    }
+
     private fun gateSceneNumbers(results: List<GateResult>, excludeG4: Boolean): List<Int> {
         val nums = mutableSetOf<Int>()
         for (result in results) {
@@ -577,7 +857,8 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     seedanceText = scene.seedanceText,
                     wanText = scene.wanText,
                     needsReview = scene.needsReview,
-                    reviewReason = scene.reviewReason
+                    reviewReason = scene.reviewReason,
+                    approved = scene.approved
                 )
             )
         }
@@ -585,7 +866,22 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadSavedBibles() {
         viewModelScope.launch {
-            savedBibles = withContext(Dispatchers.IO) { db.v2BibleDao().all() }
+            val bibles = withContext(Dispatchers.IO) { db.v2BibleDao().all() }
+            savedBibles = bibles
+            bibleSummaries = withContext(Dispatchers.IO) {
+                bibles.associate { item ->
+                    val scenes = db.v2SceneDao().ofBible(item.id)
+                    val parsed = runCatching {
+                        JsonLite.parse(item.bibleJson) as? com.daftech.promptku.engine.Json.Obj
+                    }.getOrNull()?.let { com.daftech.promptku.engine.V2Models.bibleFromJson(it) }
+                    item.id to V2BibleSummary(
+                        sceneCount = scenes.size,
+                        flaggedCount = scenes.count { it.needsReview },
+                        durationMinutes = parsed?.durationMinutes ?: 3,
+                        episodeNumber = parsed?.episodeNumber ?: 1
+                    )
+                }
+            }
         }
     }
 
@@ -622,11 +918,14 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                             seedanceText = item.seedanceText,
                             wanText = item.wanText,
                             needsReview = item.needsReview,
-                            reviewReason = item.reviewReason
+                            reviewReason = item.reviewReason,
+                            approved = item.approved
                         )
                     }
                     gates = bible?.let { ValidationGates.runGates(it, scenes, images.isNotEmpty()) }.orEmpty()
-                    step = V2Step.PROMPTS
+                    // v2.1 — bible tanpa scene (baru dikembangkan, belum
+                    // di-approve) dibuka di Layar Cerita, bukan Prompt kosong.
+                    step = if (scenes.isNotEmpty()) V2Step.PROMPTS else V2Step.STORY
                     statusMessage = "Cerita \"${loaded.first?.title}\" dimuat dari cache (0 panggilan API)."
                 } else {
                     statusMessage = "Cerita tidak bisa dimuat dari cache."
@@ -641,43 +940,80 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun exportPrompts(context: Context): Boolean {
+    /** Export .txt ke Download.
+     *  v2.1 inovasi #2 — default HANYA engine yang aktif di layar Prompt
+     *  (keluhan 21:02: file 72 blok padahal cuma Flow yang dipakai);
+     *  [allEngines] = true baru mengeluarkan keempat engine. Narasi SuaraKu
+     *  ikut diexport (per scene + blok lengkap di akhir). */
+    fun exportPrompts(context: Context, engine: TargetEngine, allEngines: Boolean): Boolean {
         val current = bible ?: return false
         val mode = if (images.isNotEmpty()) "Mode B (referensi)" else "Mode A (teks-saja)"
+        val engineLabel = { e: TargetEngine ->
+            when (e) {
+                TargetEngine.FLOW -> "Flow"
+                TargetEngine.KLING -> "Kling"
+                TargetEngine.SEEDANCE -> "Seedance"
+                TargetEngine.WAN -> "WanGP"
+            }
+        }
         val sb = StringBuilder()
-        sb.appendLine("PromptKu v2.0 — ${current.title}")
+        sb.appendLine("PromptKu v2.1 — ${current.title}")
         sb.appendLine("Ide: ${current.sourceIdea.ifBlank { idea }}")
-        sb.appendLine("Mode: $mode | Genre: ${current.genre} | Durasi: ${current.durationMinutes} menit")
+        sb.appendLine(
+            "Mode: $mode | Genre: ${current.genre} | Durasi: ${current.durationMinutes} menit" +
+                " | Rasio: ${current.aspectRatio} | Dialog: ${current.dialogueLang}" +
+                if (current.episodeNumber > 1) " | Episode ${current.episodeNumber}" else ""
+        )
         sb.appendLine("Dunia: ${current.worldName} — ${current.worldDescEn}")
         sb.appendLine("Cahaya: ${current.lightEn}")
         sb.appendLine("Ambience: ${current.ambienceEn}")
         if (isOfflineDraft) sb.appendLine("PERINGATAN: DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")
-        sb.appendLine("Total scene: ${scenes.size}")
+        sb.appendLine("Total scene: ${scenes.size} | Disetujui: ${scenes.count { it.approved }}/${scenes.size}")
         sb.appendLine()
+        val engines = if (allEngines) {
+            listOf(TargetEngine.FLOW, TargetEngine.KLING, TargetEngine.SEEDANCE, TargetEngine.WAN)
+        } else {
+            listOf(engine)
+        }
         for (scene in scenes) {
-            sb.appendLine("Scene ${scene.sceneNumber} — Flow:")
-            sb.appendLine(scene.flowText)
-            if (scene.plan.dialogueId.isNotBlank()) {
-                sb.appendLine("Dialog ID: \"${scene.plan.dialogueId}\"")
+            for (eng in engines) {
+                val text = when (eng) {
+                    TargetEngine.FLOW -> scene.flowText
+                    TargetEngine.KLING -> scene.klingText
+                    TargetEngine.SEEDANCE -> scene.seedanceText
+                    TargetEngine.WAN -> scene.wanText
+                }
+                sb.appendLine("Scene ${scene.sceneNumber} — ${engineLabel(eng)}:")
+                sb.appendLine(text)
+                if (eng == engines.first()) {
+                    if (scene.plan.dialogueId.isNotBlank()) {
+                        sb.appendLine("Dialog ID: \"${scene.plan.dialogueId}\"")
+                    }
+                    if (scene.plan.dialogueEn.isNotBlank()) {
+                        sb.appendLine("Dialog EN: \"${scene.plan.dialogueEn}\"")
+                    }
+                    if (scene.plan.narrationId.isNotBlank()) {
+                        sb.appendLine("Narasi SuaraKu: \"${scene.plan.narrationId}\"")
+                    }
+                    if (scene.approved) {
+                        sb.appendLine("Disetujui.")
+                    }
+                    if (scene.needsReview) {
+                        sb.appendLine("PERLU CEK MANUAL: ${scene.reviewReason}")
+                    }
+                }
+                sb.appendLine()
             }
-            if (scene.plan.dialogueEn.isNotBlank()) {
-                sb.appendLine("Dialog EN: \"${scene.plan.dialogueEn}\"")
+        }
+        val narrations = scenes.filter { it.plan.narrationId.isNotBlank() }
+        if (narrations.isNotEmpty()) {
+            sb.appendLine("NARASI LENGKAP (untuk SuaraKu — satu baris per scene):")
+            narrations.forEach { scene ->
+                sb.appendLine("Scene ${scene.sceneNumber}: ${scene.plan.narrationId}")
             }
-            if (scene.needsReview) {
-                sb.appendLine("PERLU CEK MANUAL: ${scene.reviewReason}")
-            }
-            sb.appendLine()
-            sb.appendLine("Scene ${scene.sceneNumber} — Kling:")
-            sb.appendLine(scene.klingText)
-            sb.appendLine()
-            sb.appendLine("Scene ${scene.sceneNumber} — Seedance:")
-            sb.appendLine(scene.seedanceText)
-            sb.appendLine()
-            sb.appendLine("Scene ${scene.sceneNumber} — WanGP:")
-            sb.appendLine(scene.wanText)
             sb.appendLine()
         }
-        val fileName = "PromptKu-${current.title.take(40).replace(Regex("[^A-Za-z0-9]+"), "-")}-v2.txt"
+        val fileName = "PromptKu-${current.title.take(40).replace(Regex("[^A-Za-z0-9]+"), "-")}-v2.1.txt"
         val uri = ExportHelper.exportTextToDownloads(context, fileName, sb.toString())
         statusMessage = if (uri != null) "Diexport ke Download: $fileName" else "Export gagal — coba lagi."
         return uri != null

@@ -15,6 +15,71 @@ enum class V2Mode { TEXT_ONLY, REFERENCE }
 
 object ModeRender {
 
+    // ---------- v2.1 fix6 — pembersih teks render ----------
+
+    /** Buang titik di ujung kalimat sebelum dirangkai (pembunuh ".."). */
+    fun cleanField(text: String): String = text.trim().trimEnd('.').trim()
+
+    /** "In A sprawling..." -> "In a sprawling...": artikel "A" di awal deskripsi
+     *  dunia jadi huruf kecil. Hanya "A " di awal; kata benda nama diri tidak disentuh. */
+    fun cleanWorldStart(desc: String): String =
+        if (desc.startsWith("A ")) "a" + desc.substring(1) else desc
+
+    private fun tokensOf(text: String): Set<String> =
+        text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.isNotBlank() }.toSet()
+
+    /** Bersihkan actionEn dari 2 cacat lapangan:
+     *  (a) daftar deskripsi dunia yang bocor verbatim ke aksi;
+     *  (b) aksi diawali nama hero/antagonis ("Golden Demon channels..." ->
+     *      "channels..." — nama sudah ada di pointer sebelum aksi). */
+    fun sanitizeAction(action: String, bible: StoryBible): String {
+        var out = action.trim()
+        val world = bible.worldDescEn.trim()
+        if (world.length >= 20) {
+            val idx = out.lowercase().indexOf(world.lowercase())
+            if (idx >= 0) {
+                out = (out.substring(0, idx) + out.substring(idx + world.length)).trim()
+                    .trimStart(',', ' ', ';').trim()
+            } else {
+                // Varian: hanya 40 karakter pertama dunia yang bocor.
+                val head = world.take(40)
+                val idx2 = out.lowercase().indexOf(head.lowercase())
+                if (idx2 >= 0) {
+                    out = (out.substring(0, idx2) + out.substring(idx2 + head.length)).trim()
+                        .trimStart(',', ' ', ';').trim()
+                }
+            }
+        }
+        for (name in listOfNotNull(bible.hero?.name, bible.antagonistName.ifBlank { null })) {
+            val n = name.trim()
+            if (n.isNotBlank() && out.startsWith(n, ignoreCase = true)) {
+                val rest = out.substring(n.length)
+                if (rest.isEmpty() || rest.first() in " ,;:") {
+                    out = rest.trimStart(',', ' ', ';', ':').trim()
+                }
+            }
+        }
+        return out
+    }
+
+    /** SFX vs ambience: kalau isinya nyaris sama (Jaccard >= 0.8), jangan cetak
+     *  paragraf yang sama dua kali. */
+    fun audioClause(audioEn: String, ambienceEn: String): String {
+        val audio = cleanField(audioEn).ifBlank { "quiet ambience" }
+        val amb = cleanField(ambienceEn)
+        if (amb.isBlank()) return "SFX: $audio."
+        val a = tokensOf(audio)
+        val b = tokensOf(amb)
+        val union = a union b
+        val jaccard = if (union.isEmpty()) 0.0 else (a intersect b).size.toDouble() / union.size
+        return if (jaccard >= 0.8) "SFX: $audio."
+        else "SFX: $audio. Ambient noise: $amb."
+    }
+
+    /** Klausa rasio aspek, ditempel di ujung tiap teks prompt. */
+    fun aspectClause(aspectRatio: String): String =
+        if (aspectRatio == "16:9") " Widescreen 16:9 framing." else " Vertical 9:16 framing."
+
     /** Kamera/lensa/sudut efek menimpa rencana Prompter saat render. */
     data class EffectiveShot(
         val cameraMove: CameraMove,
@@ -97,7 +162,9 @@ object ModeRender {
         val lastScene = plans.maxOf { it.sceneNumber }
         val fightMoves = EffectLibrary.FIGHT_MOVES_ALL.filter { it.id != "finisher" }
         val cameraMoves = EffectLibrary.ALL.filter { it.category == EffectCategory.CAMERA }
-        val used = mutableSetOf<String>()
+        // v2.1 — benih `used` dari efek yang SUDAH terpasang (regenerasi 1 scene:
+        // tanpa ini, jurus baru bisa duplikat jurus scene lain yang sudah ada).
+        val used = plans.mapNotNull { it.effectId.ifBlank { null } }.toMutableSet()
         var fightIdx = 0
         var camIdx = 0
         return plans.map { plan ->
@@ -168,92 +235,126 @@ object ModeRender {
         )
         val effect = EffectLibrary.ALL.firstOrNull { it.id == plan.effectId }
         val action = buildString {
-            append(plan.actionEn)
+            append(cleanField(plan.actionEn))
             val frag = effect?.let { effectFragment(it, bible) }.orEmpty()
             if (frag.isNotBlank()) append(" ").append(frag)
         }
+        // v2.1 fix6 — antagonis == hero (film satu penjahat): jangan pasang
+        // tokoh kedua yang isinya nama yang sama.
+        val secondCharacter = if (bible.antagonistName.isBlank() ||
+            bible.antagonistName.equals(hero?.name, ignoreCase = true)
+        ) null else CharacterDna(bible.antagonistName, bible.antagonistDescEn)
         return ShotInput(
             title = bible.title,
             genre = bible.genre,
             style = StoryInfer.styleForGenre(bible.genre),
             character = hero?.let { CharacterDna(it.name, it.anchorsEn.joinToString(", ")) },
-            secondCharacter = if (bible.antagonistName.isBlank()) null
-            else CharacterDna(bible.antagonistName, bible.antagonistDescEn),
-            world = WorldLock(bible.worldName, bible.worldDescEn),
+            secondCharacter = secondCharacter,
+            world = WorldLock(bible.worldName, cleanField(cleanWorldStart(bible.worldDescEn))),
             shotSize = shot.shotSize,
             angle = shot.angle,
             lensMm = shot.lensMm,
             cameraMove = shot.cameraMove,
             light = lightKindFrom(bible.lightEn),
             actionEn = action,
-            audioEn = plan.audioEn,
+            audioEn = cleanField(plan.audioEn),
             dialogue = DialogueLine(
                 speaker = hero?.name.orEmpty(),
                 textId = plan.dialogueId,
                 textEn = plan.dialogueEn,
-                language = if (plan.dialogueId.isNotBlank()) DialogueLang.ID else DialogueLang.EN
+                // v2.1 — bahasa dialog pilihan user menang; jatuh ke versi yang ada.
+                language = when {
+                    bible.dialogueLang == "EN" && plan.dialogueEn.isNotBlank() -> DialogueLang.EN
+                    plan.dialogueId.isNotBlank() -> DialogueLang.ID
+                    else -> DialogueLang.EN
+                }
             ),
             characterCard = card,
-            ambienceEn = bible.ambienceEn
+            ambienceEn = cleanField(bible.ambienceEn)
         )
     }
 
-    /** Mode B: teks penunjuk gambar per engine (template lokal). */
-    fun renderReference(bible: StoryBible, plan: V2ScenePlan, shot: EffectiveShot, engine: TargetEngine): String {
+    /** Mode B: teks penunjuk gambar per engine (template lokal).
+     *  v2.1 fix6 — daftar referensi dibangun sebagai SATU list ("for A, B, C"),
+     *  bukan tempelan ", X" + " and, X" (itu sumber "Frieza, Frieza" 54x dan
+     *  "and, Frieza" 36x); antagonis == hero di-drop; klaim "Image 2" hanya
+     *  kalau gambar ke-2 memang ada ([imageCount] >= 2). */
+    fun renderReference(bible: StoryBible, plan: V2ScenePlan, shot: EffectiveShot, engine: TargetEngine, imageCount: Int = 1): String {
         val hero = bible.hero
         val heroName = hero?.name ?: "the hero"
-        val antagonistPart = if (bible.antagonistName.isBlank()) "" else ", ${bible.antagonistName}"
-        val pointer = "$heroName${if (antagonistPart.isBlank()) "" else " and$antagonistPart"} in the reference images"
+        val sameAntagonist = bible.antagonistName.isBlank() ||
+            bible.antagonistName.equals(heroName, ignoreCase = true)
+        val antagonistAnd = if (sameAntagonist) "" else " and ${bible.antagonistName}"
+        val refNames = listOf(heroName) +
+            (if (sameAntagonist) emptyList() else listOf(bible.antagonistName)) +
+            listOf(bible.worldName)
+        val refList = refNames.joinToString(", ")
+        val pointer = "$heroName$antagonistAnd in the reference images"
         val shotPhrase = shot.shotSize.phraseEn
         val cameraPhrase = shot.cameraMove.phraseEn
         val anglePhrase = shot.angle.phraseEn
+        val action = cleanField(sanitizeAction(plan.actionEn, bible))
+        val world = cleanField(cleanWorldStart(bible.worldDescEn))
+        val light = cleanField(bible.lightEn)
         val dialogue = when {
+            bible.dialogueLang == "EN" && plan.dialogueEn.isNotBlank() -> " Dialogue: \"${plan.dialogueEn}\"."
             plan.dialogueId.isNotBlank() -> " Dialogue: \"${plan.dialogueId}\"."
             plan.dialogueEn.isNotBlank() -> " Dialogue: \"${plan.dialogueEn}\"."
             else -> ""
         }
-        val audio = "SFX: ${plan.audioEn.ifBlank { "quiet ambience" }}. Ambient noise: ${bible.ambienceEn}."
+        val audio = audioClause(plan.audioEn, bible.ambienceEn)
+        val aspect = aspectClause(bible.aspectRatio)
+        val referenceLine = if (imageCount >= 2) {
+            "Reference: Image 1 = $heroName, Image 2 = ${bible.worldName}. "
+        } else {
+            "Reference: Image 1 = $heroName. "
+        }
         return when (engine) {
-            TargetEngine.FLOW -> "Using the provided images for $heroName$antagonistPart, and ${bible.worldName}, " +
-                "create a $shotPhrase of $pointer ${plan.actionEn}. " +
-                "In ${bible.worldDescEn}, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase, lit with ${bible.lightEn}.$dialogue $audio"
-            TargetEngine.KLING -> "$heroName ${plan.actionEn}. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
-                "Using the provided images for $heroName$antagonistPart and ${bible.worldName}. " +
-                "Setting: ${bible.worldDescEn}.$dialogue $audio"
-            TargetEngine.SEEDANCE -> "Using the provided images for $heroName$antagonistPart, and ${bible.worldName}, " +
-                "create a $shotPhrase of $pointer ${plan.actionEn}. $cameraPhrase, ${shot.lensMm}mm lens. " +
-                "Reference: Image 1 = $heroName, Image 2 = ${bible.worldName}. " +
-                "Setting: ${bible.worldDescEn}.$dialogue $audio"
-            TargetEngine.WAN -> "Using the reference image of $heroName, ${plan.actionEn}. " +
-                "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${plan.audioEn}."
+            TargetEngine.FLOW -> "Using the provided images for $refList, " +
+                "create a $shotPhrase of $pointer $action. " +
+                "In $world, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase, lit with $light.$dialogue $audio$aspect"
+            TargetEngine.KLING -> "$heroName $action. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
+                "Using the provided images for $refList. " +
+                "Setting: $world.$dialogue $audio$aspect"
+            TargetEngine.SEEDANCE -> "Using the provided images for $refList, " +
+                "create a $shotPhrase of $pointer $action. $cameraPhrase, ${shot.lensMm}mm lens. " +
+                referenceLine +
+                "Setting: $world.$dialogue $audio$aspect"
+            TargetEngine.WAN -> "Using the reference image of $heroName, $action. " +
+                "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${cleanField(plan.audioEn).ifBlank { "quiet ambience" }}.$aspect"
         }
     }
 
     fun renderScene(
         bible: StoryBible,
         plan: V2ScenePlan,
-        mode: V2Mode
+        mode: V2Mode,
+        imageCount: Int = 1
     ): V2ScenePrompt {
-        val shot = effectiveShot(plan)
+        // v2.1 fix6 — bersihkan aksi SEBELUM render (berlaku dua mode +
+        // rencana lama dari cache ikut bersih saat dibuka ulang).
+        val cleanPlan = plan.copy(actionEn = cleanField(sanitizeAction(plan.actionEn, bible)))
+        val shot = effectiveShot(cleanPlan)
+        val aspect = aspectClause(bible.aspectRatio)
         return if (mode == V2Mode.TEXT_ONLY) {
-            val input = shotInputFor(bible, plan, shot)
+            val input = shotInputFor(bible, cleanPlan, shot)
             val byEngine = PromptEngine.buildAll(input).associateBy { it.engine }
             V2ScenePrompt(
-                sceneNumber = plan.sceneNumber,
-                plan = plan,
-                flowText = byEngine[TargetEngine.FLOW]?.text.orEmpty(),
-                klingText = byEngine[TargetEngine.KLING]?.text.orEmpty(),
-                seedanceText = byEngine[TargetEngine.SEEDANCE]?.text.orEmpty(),
-                wanText = byEngine[TargetEngine.WAN]?.text.orEmpty()
+                sceneNumber = cleanPlan.sceneNumber,
+                plan = cleanPlan,
+                flowText = byEngine[TargetEngine.FLOW]?.text.orEmpty() + aspect,
+                klingText = byEngine[TargetEngine.KLING]?.text.orEmpty() + aspect,
+                seedanceText = byEngine[TargetEngine.SEEDANCE]?.text.orEmpty() + aspect,
+                wanText = byEngine[TargetEngine.WAN]?.text.orEmpty() + aspect
             )
         } else {
             V2ScenePrompt(
-                sceneNumber = plan.sceneNumber,
-                plan = plan,
-                flowText = renderReference(bible, plan, shot, TargetEngine.FLOW),
-                klingText = renderReference(bible, plan, shot, TargetEngine.KLING),
-                seedanceText = renderReference(bible, plan, shot, TargetEngine.SEEDANCE),
-                wanText = renderReference(bible, plan, shot, TargetEngine.WAN)
+                sceneNumber = cleanPlan.sceneNumber,
+                plan = cleanPlan,
+                flowText = renderReference(bible, cleanPlan, shot, TargetEngine.FLOW, imageCount),
+                klingText = renderReference(bible, cleanPlan, shot, TargetEngine.KLING, imageCount),
+                seedanceText = renderReference(bible, cleanPlan, shot, TargetEngine.SEEDANCE, imageCount),
+                wanText = renderReference(bible, cleanPlan, shot, TargetEngine.WAN, imageCount)
             )
         }
     }
@@ -262,10 +363,11 @@ object ModeRender {
         bible: StoryBible,
         plans: List<V2ScenePlan>,
         mode: V2Mode,
-        isFight: Boolean
+        isFight: Boolean,
+        imageCount: Int = 1
     ): List<V2ScenePrompt> {
         val totalBeats = bible.beats.size.coerceAtLeast(1)
         val assigned = assignEffects(plans, isFight, totalBeats)
-        return assigned.map { renderScene(bible, it, mode) }
+        return assigned.map { renderScene(bible, it, mode, imageCount) }
     }
 }
