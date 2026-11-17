@@ -1,8 +1,12 @@
 package com.daftech.promptku.engine
 
-// 6 Gerbang Validasi v2.0 — dicek otomatis SEBELUM export, dari bible +
+// 7 Gerbang Validasi v2.0 — dicek otomatis SEBELUM export, dari bible +
 // scene yang sudah dirender. Gerbang 6 prosedural (coba ulang 1x lalu
 // tandai) — di sini diwakili sebagai "semua kegagalan sudah ditandai".
+// v2.1 fix6 (riset): G7 "Satu Puncak" — gerbang alur (BeatMap + ArcLexicon).
+// R8 lunak (klimaks tanpa kejatuhan antagonis terlihat) SENGAJA tidak
+// masuk: tanpa kanal "warning" di GateResult, ia akan memicu retry yang
+// salah — ditunda sampai ada kanal itu.
 
 data class GateResult(
     val id: String,
@@ -54,6 +58,180 @@ object ValidationGates {
 
     private fun wordCount(text: String): Int =
         text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+
+    /** G7 "Satu Puncak" — gerbang alur sadar-beat (fix6 riset).
+     *  Aturan (semua membaca action_en + narration_id, kecuali disebut lain):
+     *  R1 FINALITAS (final/terakhir/puncak/akhir, "serangan terakhir",
+     *    "semakin memuncak") HANYA di Klimaks.
+     *  R2 AWAL ("first clash", "benturan pertama", "memulai pertarungan")
+     *    HANYA di Pembuka/Pemicu — cerita tidak boleh "dimulai" dua kali.
+     *  R3 RESOLUSI (victorious/kemenangan/bebas/damai/tenang/terkalahkan/
+     *    usai/mereda) HANYA di Penutup.
+     *  R4 SERANGAN BESAR: maks per beat Pembuka 0, Pemicu 1, Eskalasi 2,
+     *    Klimaks 3, Penutup 0 (maks 1 per scene — pola ArcLexicon).
+     *  R4b JURUS BERNAMA: maks 1x per film DAN hanya di Eskalasi/Klimaks.
+     *  R5 ENTRANCE VILLAIN: maks 1x per film DAN hanya di Pembuka/Pemicu.
+     *  R6 KURVA: skor maks pra-Klimaks tidak boleh mengalahkan Klimaks;
+     *    skor maks Penutup tidak boleh setinggi/melebihi Klimaks. Dilewati
+     *    kalau film tidak punya busur aksi sama sekali (tanpa big attack /
+     *    jurus bernama — drama/romansa tidak dipaksa berkurva).
+     *  R7 PENUTUP BERSIH: aksi Penutup tanpa kata berantem/tantangan; DAN
+     *    narasi yang mengklaim klimaks harus ditunjukkan aksinya di scene
+     *    yang sama (bukan cuma diceritakan).
+     *  Kalibrasi lapangan (teks verbatim): Bima 12/18 scene melanggar
+     *  (S3, S4, S5, S7, S9, S10, S11, S12, S13, S15, S17, S18); Kaito 8/18
+     *  (S3, S4, S5, S6, S9, S11, S16, S17); Kaito S18 LOLOS ("raises his
+     *  fists in triumph" di Penutup = resolusi di tempatnya). */
+    fun runArcGate(bible: StoryBible, scenes: List<V2ScenePrompt>): GateResult {
+        val failures = mutableListOf<String>()
+        if (scenes.isEmpty()) {
+            return GateResult("G7", "Satu puncak: alur naik ke satu klimaks", true, emptyList())
+        }
+        val map = BeatMap.build(bible.totalScenes, bible.beats)
+        val climaxIdx = BeatMap.climaxIndex(bible.beats)
+        val closingIdx = BeatMap.closingIndex(bible.beats)
+
+        for (scene in scenes) {
+            val num = scene.sceneNumber
+            val beat = BeatMap.beatForScene(num, map)
+            val role = BeatMap.roleOf(beat.beatIndex, bible.beats)
+            val action = scene.plan.actionEn
+            val narration = scene.plan.narrationId
+            // R1 — finalitas hanya di Klimaks.
+            val finality = ArcLexicon.findFinality(action) + ArcLexicon.findFinality(narration)
+            if (finality.isNotEmpty() && role != BeatRole.CLIMAX) {
+                failures.add(
+                    "Scene $num (${beat.name}): klaim finalitas \"${finality.first()}\" di luar Klimaks"
+                )
+            }
+            // R2 — klaim awal hanya di Pembuka/Pemicu.
+            val firstness = ArcLexicon.findFirstness(action) + ArcLexicon.findFirstness(narration)
+            if (firstness.isNotEmpty() && role != BeatRole.OPENING && role != BeatRole.EARLY) {
+                failures.add(
+                    "Scene $num (${beat.name}): klaim awal \"${firstness.first()}\" setelah Pembuka/Pemicu"
+                )
+            }
+            // R3 — resolusi hanya di Penutup.
+            val resolution = ArcLexicon.findResolution(action) + ArcLexicon.findResolution(narration)
+            if (resolution.isNotEmpty() && role != BeatRole.CLOSING) {
+                failures.add(
+                    "Scene $num (${beat.name}): klaim resolusi \"${resolution.first()}\" di luar Penutup"
+                )
+            }
+            // R7 — narasi mengklaim klimaks yang tidak ditunjukkan aksinya.
+            val narrFinality = ArcLexicon.findFinality(narration)
+            if (narrFinality.isNotEmpty() && !ArcLexicon.isBigAttack(action)) {
+                failures.add(
+                    "Scene $num: narasi mengklaim klimaks (\"${narrFinality.first()}\") yang tidak ditunjukkan aksinya"
+                )
+            }
+            // R7 — Penutup bersih dari kata berantem/tantangan.
+            if (role == BeatRole.CLOSING) {
+                val fight = ArcLexicon.findFightChallenge(action)
+                if (fight.isNotEmpty()) {
+                    failures.add(
+                        "Scene $num (Penutup): masih ada aksi berantem (\"${fight.first()}\") setelah klimaks"
+                    )
+                }
+            }
+        }
+
+        // R4 — serangan besar per beat (batas: Pembuka 0, Pemicu 1,
+        // Eskalasi 2, Klimaks 3, Penutup 0). Klimaks TIDAK punya batas
+        // minimum — drama tanpa big attack tidak dipaksa berantem.
+        val bigByBeat = mutableMapOf<Int, MutableList<Int>>()
+        for (scene in scenes) {
+            if (ArcLexicon.isBigAttack(scene.plan.actionEn)) {
+                val beat = BeatMap.beatForScene(scene.sceneNumber, map)
+                bigByBeat.getOrPut(beat.beatIndex) { mutableListOf() }.add(scene.sceneNumber)
+            }
+        }
+        for ((beatIdx, nums) in bigByBeat) {
+            val max = BeatMap.maxBigAttacks(beatIdx, bible.beats)
+            if (nums.size > max) {
+                val beat = map.first { it.beatIndex == beatIdx }
+                failures.add(
+                    "Scene ${nums.last()} (${beat.name}): serangan besar ${nums.size}x (maks $max per beat)"
+                )
+            }
+        }
+
+        // R4b — jurus bernama: maks 1x per film, hanya Eskalasi/Klimaks.
+        val moves = mutableMapOf<String, MutableList<Int>>()
+        val moveBeat = mutableMapOf<String, Int>()
+        for (scene in scenes) {
+            val move = ArcLexicon.extractNamedMove(scene.plan.actionEn, bible) ?: continue
+            val key = move.lowercase()
+            moves.getOrPut(key) { mutableListOf() }.add(scene.sceneNumber)
+            moveBeat.putIfAbsent(key, BeatMap.beatForScene(scene.sceneNumber, map).beatIndex)
+        }
+        for ((move, nums) in moves) {
+            if (nums.size > 1) {
+                failures.add(
+                    "Scene ${nums.last()}: jurus bernama \"$move\" sudah dipakai di scene ${nums.first()} (maks 1x per film)"
+                )
+            }
+            val role = BeatMap.roleOf(moveBeat[move] ?: 0, bible.beats)
+            if (role != BeatRole.LATE && role != BeatRole.CLIMAX) {
+                val beat = map.first { it.beatIndex == moveBeat[move] }
+                failures.add(
+                    "Scene ${nums.first()} (${beat.name}): jurus bernama \"$move\" di luar Eskalasi/Klimaks"
+                )
+            }
+        }
+
+        // R5 — entrance villain: maks 1x per film, hanya Pembuka/Pemicu.
+        val entrances = scenes.filter {
+            ArcLexicon.isVillainEntrance(it.plan.actionEn, bible.antagonistName)
+        }.map { it.sceneNumber }
+        for ((idx, num) in entrances.withIndex()) {
+            val beat = BeatMap.beatForScene(num, map)
+            val role = BeatMap.roleOf(beat.beatIndex, bible.beats)
+            if (idx > 0) {
+                failures.add(
+                    "Scene $num (${beat.name}): entrance ${bible.antagonistName} kedua (sudah masuk di scene ${entrances.first()})"
+                )
+            }
+            if (role != BeatRole.OPENING && role != BeatRole.EARLY) {
+                failures.add(
+                    "Scene $num (${beat.name}): entrance ${bible.antagonistName} di luar Pembuka/Pemicu"
+                )
+            }
+        }
+
+        // R6 — kurva intensitas (dilewati kalau film tanpa busur aksi).
+        val hasActionArc = scenes.any {
+            ArcLexicon.isBigAttack(it.plan.actionEn) ||
+                ArcLexicon.extractNamedMove(it.plan.actionEn, bible) != null
+        }
+        if (hasActionArc) {
+            val scores = scenes.associate {
+                it.sceneNumber to ArcLexicon.intensityScore(it.plan.actionEn, it.plan.narrationId, bible)
+            }
+            val climaxRange = map.first { it.beatIndex == climaxIdx }
+            val closingRange = map.first { it.beatIndex == closingIdx }
+            val climaxMax = scores.filterKeys { it in climaxRange.firstScene..climaxRange.lastScene }
+                .values.maxOrNull() ?: 0
+            val preMax = scores.filterKeys { it < climaxRange.firstScene }
+                .values.maxOrNull() ?: 0
+            val closeMax = scores.filterKeys { it in closingRange.firstScene..closingRange.lastScene }
+                .values.maxOrNull() ?: 0
+            if (preMax > climaxMax) {
+                failures.add(
+                    "Kurva intensitas: puncak pra-Klimaks ($preMax) mengalahkan Klimaks ($climaxMax)"
+                )
+            }
+            if (climaxMax > 0 && closeMax >= climaxMax) {
+                failures.add(
+                    "Kurva intensitas: Penutup ($closeMax) setinggi/melebihi Klimaks ($climaxMax)"
+                )
+            }
+        }
+        return GateResult(
+            "G7", "Satu puncak: finalitas/resolusi di tempatnya, jurus & entrance 1x",
+            failures.isEmpty(), failures
+        )
+    }
 
     fun runGates(
         bible: StoryBible,
@@ -209,6 +387,14 @@ object ValidationGates {
             }
         }
         results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip; narasi terisi", g5Failures.isEmpty(), g5Failures))
+
+        // G7 — Satu Puncak (fix6 riset): alur naik ke SATU klimaks.
+        // Membaca action_en DAN narration_id (narasi membawa 9/12 klaim
+        // sakit di film Bima — gerbang yang tidak membaca narasi buta 75%
+        // penyakitnya). Dialog TIDAK digate (tokoh boleh sesumbar/bohong).
+        // Berjalan juga untuk Draft Offline (narasi kosong = tidak ada
+        // temuan R1–R3; aksi tetap diperiksa R4–R7).
+        results.add(runArcGate(bible, scenes))
 
         // G6 — Semua kegagalan sudah ditandai "perlu cek manual".
         val failedScenes = mutableSetOf<Int>()

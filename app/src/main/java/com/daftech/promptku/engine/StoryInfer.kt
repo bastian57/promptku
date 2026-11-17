@@ -185,7 +185,12 @@ object StoryInfer {
                 // SENGAJA tidak ada "dahsyat"/"hebat": kata sifat, bisa salah
                 // tangkap drama ("kisah cinta yang dahsyat").
                 "pertarungan", "pertempuran", "peperangan",
-                "battle", "fight", "war"
+                // v2.1 fix6 (riset) — "clash" (ide "clash of legenda" jatuh
+                // ke FANTASI di film Bima) + "bentrok". SENGAJA tidak ada
+                // "benturan": "benturan budaya" = DRAMA (culture clash).
+                // SENGAJA tidak ada "titan": mitologi -> FANTASI (dicek
+                // duluan), dan "titan" tidak selalu berarti pertarungan.
+                "battle", "fight", "war", "clash", "bentrok"
             ),
             worldName = "Kota Malam",
             worldDescEn = "a metropolitan city at night, glass towers, neon signs, wet asphalt, steam vents",

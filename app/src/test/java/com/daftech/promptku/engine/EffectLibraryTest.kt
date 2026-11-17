@@ -12,6 +12,14 @@ import org.junit.Test
 class EffectLibraryTest {
 
     @Test
+    fun clashDetectsFight() {
+        // v2.1 fix6 (riset) — "clash" + "bentrok" masuk FIGHT_TRIGGERS
+        // (paralel dengan ACTION di StoryInfer).
+        assertTrue(EffectLibrary.detect("Dua titan clash di tengah badai").fight)
+        assertTrue(EffectLibrary.detect("Dua geng bentrok di jalanan").fight)
+    }
+
+    @Test
     fun libraryHas28EffectsAcrossFiveCategories() {
         assertEquals(28, EffectLibrary.ALL.size)
         assertEquals(5, EffectCategory.values().size)

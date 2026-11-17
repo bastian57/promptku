@@ -77,7 +77,7 @@ class V2PipelineTest {
     }
 
     @Test
-    fun buildPromptsBatchesEighteenScenesIntoFiveCalls() {
+    fun buildPromptsBatchesEighteenScenesByBeat() {
         val bodies = mutableListOf<String>()
         val transport = HttpTransport { url, _, body ->
             bodies.add(body)
@@ -94,7 +94,10 @@ class V2PipelineTest {
         val (plans, fail) = pipeline.buildPrompts(testBible)
         assertNull(fail)
         assertEquals(18, plans.size)
-        assertEquals(5, bodies.size) // 4+4+4+4+2
+        // v2.1 fix6 (riset) — batching per BEAT, bukan chunked(4): bible 2
+        // beat -> rentang [1-9],[10-18], masing-masing dipecah <= 5 scene:
+        // [1-5],[6-9],[10-14],[15-18] = 4 panggilan.
+        assertEquals(4, bodies.size)
         assertEquals((1..18).toList(), plans.map { it.sceneNumber })
     }
 
@@ -114,7 +117,7 @@ class V2PipelineTest {
         val (plans, fail) = pipeline.buildPrompts(testBible) { done, total -> seen.add(done to total) }
         assertNull(fail)
         assertEquals(18, plans.size)
-        assertEquals(listOf(1 to 5, 2 to 5, 3 to 5, 4 to 5, 5 to 5), seen)
+        assertEquals(listOf(1 to 4, 2 to 4, 3 to 4, 4 to 4), seen)
     }
 
     @Test

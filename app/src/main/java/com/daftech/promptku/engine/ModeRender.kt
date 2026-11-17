@@ -292,6 +292,10 @@ object ModeRender {
         val secondCharacter = if (bible.antagonistName.isBlank() ||
             bible.antagonistName.equals(hero?.name, ignoreCase = true)
         ) null else CharacterDna(bible.antagonistName, bible.antagonistDescEn)
+        // v2.1 fix6 (riset) — kata/karakter klausa aspek ("Vertical 9:16
+        // framing.") masuk anggaran PromptEngine (cap efektif = cap engine
+        // dikurangi ini), supaya total export tidak lewat cap 3 kata.
+        val aspect = aspectClause(bible.aspectRatio)
         return ShotInput(
             title = bible.title,
             genre = bible.genre,
@@ -324,7 +328,9 @@ object ModeRender {
                 }
             ),
             characterCard = card,
-            ambienceEn = cleanField(bible.ambienceEn)
+            ambienceEn = cleanField(bible.ambienceEn),
+            aspectWords = MythFilter.countWords(aspect),
+            aspectChars = aspect.length
         )
     }
 
@@ -354,8 +360,11 @@ object ModeRender {
         val action = cleanField(sanitizeAction(plan.actionEn, bible))
         val world = cleanField(cleanWorldStart(bible.worldDescEn))
         val light = cleanField(bible.lightEn)
-        // v2.1 fix4 — dialog ditulis beserta pembicaranya ("Dialogue (Broly):
-        // ...") bila prompter mengisinya; kosong = format lama tanpa nama.
+        // v2.1 fix4 — dialog ditulis beserta pembicaranya bila prompter
+        // mengisinya; kosong = hero (sama seperti shotInputFor Mode A).
+        // v2.1 fix6 (riset) — format dialog resmi 2026 TANPA kutip:
+        // `Nama says: teks` (bukan `Dialogue (Nama): "teks"`). Teks dialog
+        // dibersihkan titik ujungnya ("...last.". -> tidak ada "..").
         val speaker = plan.dialogueSpeaker.trim()
         val dialogueText = when {
             bible.dialogueLang == "EN" && plan.dialogueEn.isNotBlank() -> plan.dialogueEn
@@ -363,9 +372,9 @@ object ModeRender {
             plan.dialogueEn.isNotBlank() -> plan.dialogueEn
             else -> ""
         }
+        val speakerName = speaker.ifBlank { heroName }
         val dialogue = if (dialogueText.isBlank()) "" else
-            if (speaker.isNotBlank()) " Dialogue ($speaker): \"$dialogueText\"."
-            else " Dialogue: \"$dialogueText\"."
+            " $speakerName says: ${cleanField(dialogueText)}."
         val audio = audioClause(plan.audioEn, bible.ambienceEn)
         val aspect = aspectClause(bible.aspectRatio)
         val referenceLine = if (imageCount >= 2) {
@@ -387,22 +396,46 @@ object ModeRender {
         // selamat ("Setting: $world.") — FLOW ikut pola itu; cahaya jadi
         // kalimat sendiri ("Lighting: ..."). Berlaku juga untuk dunia frasa
         // lama ("Setting: ice floes..." tetap terbaca sebagai deskripsi).
-        val klingLead = if (startsWithName(action, bible)) action else "$heroName $action"
-        val wanAction = stripLeadingName(action, bible)
-        return when (engine) {
-            TargetEngine.FLOW -> "Using the provided images for $refList, " +
-                "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $action. " +
-                "Setting: $world. $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. Lighting: $light.$dialogue $audio$aspect"
-            TargetEngine.KLING -> "$klingLead. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
-                "Using the provided images for $refList. " +
-                "Setting: $world.$dialogue $audio$aspect"
-            TargetEngine.SEEDANCE -> "Using the provided images for $refList, " +
-                "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $action. $cameraPhrase, ${shot.lensMm}mm lens. " +
-                referenceLine +
-                "Setting: $world.$dialogue $audio$aspect"
-            TargetEngine.WAN -> "Using the reference image of $heroName, $wanAction. " +
-                "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${cleanField(plan.audioEn).ifBlank { "quiet ambience" }}.$aspect"
+        // v2.1 fix6 (riset) — Mode B akhirnya punya trim (dulu TIDAK ADA —
+        // S17 Kaito 1.453 karakter / 211 kata lolos ke export, lewat batas
+        // Flow ~1.400 karakter). Yang dipotong HANYA ekor aksi (detail
+        // sekunder); dunia (G1), dialog, audio, dan aspek TIDAK PERNAH
+        // disentuh — teks yang terpotong tetap koheren karena aksi adalah
+        // satu kalimat panjang, bukan daftar klausa wajib.
+        fun buildText(a: String): String {
+            val lead = if (startsWithName(a, bible)) a else "$heroName $a"
+            val wanA = stripLeadingName(a, bible)
+            return when (engine) {
+                TargetEngine.FLOW -> "Using the provided images for $refList, " +
+                    "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $a. " +
+                    "Setting: $world. $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. Lighting: $light.$dialogue $audio$aspect"
+                TargetEngine.KLING -> "$lead. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
+                    "Using the provided images for $refList. " +
+                    "Setting: $world.$dialogue $audio$aspect"
+                TargetEngine.SEEDANCE -> "Using the provided images for $refList, " +
+                    "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $a. $cameraPhrase, ${shot.lensMm}mm lens. " +
+                    referenceLine +
+                    "Setting: $world.$dialogue $audio$aspect"
+                TargetEngine.WAN -> "Using the reference image of $heroName, $wanA. " +
+                    "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${cleanField(plan.audioEn).ifBlank { "quiet ambience" }}.$aspect"
+            }
         }
+        var text = buildText(action)
+        val overWords = MythFilter.countWords(text) - engine.maxWords
+        val overChars = if (engine == TargetEngine.FLOW) {
+            text.length - PromptEngine.FLOW_CHAR_CAP
+        } else {
+            0
+        }
+        if (overWords > 0 || overChars > 0) {
+            val actionWords = action.split(Regex("\\s+"))
+            val keepByWords = if (overWords > 0) actionWords.size - overWords else actionWords.size
+            // ~6 karakter/kata rata-rata: potong 1 kata per 6 karakter lebih.
+            val keepByChars = if (overChars > 0) actionWords.size - (overChars / 6 + 1) else actionWords.size
+            val keep = maxOf(4, minOf(keepByWords, keepByChars))
+            text = buildText(cleanField(actionWords.take(keep).joinToString(" ")))
+        }
+        return text
     }
 
     fun renderScene(
@@ -448,6 +481,37 @@ object ModeRender {
     ): List<V2ScenePrompt> {
         val totalBeats = bible.beats.size.coerceAtLeast(1)
         val assigned = assignEffects(plans, isFight, totalBeats)
-        return assigned.map { renderScene(bible, it, mode, imageCount) }
+        // v2.1 fix6 (riset) — Mode A cloud tidak punya pose (prompter JSON
+        // tak ada field pose) -> "Ends as standing firm." 18x (Bima). Isi
+        // dari siklus di sini, SETELAH assignEffects, SEBELUM renderScene:
+        // poseStart[N] = poseEnd[N-1] (rantai), poseEnd dari POSE_CYCLE
+        // dengan seed = hash judul (deterministik per film). Rencana yang
+        // sudah punya pose (Draft Offline) TIDAK disentuh.
+        val posed = fillPosesFromCycle(bible, assigned)
+        return posed.map { renderScene(bible, it, mode, imageCount) }
+    }
+
+    // v2.1 fix6 (riset) — isi pose kosong dari siklus pose ScriptEngine.
+    // Deterministik per sceneNumber (bukan per posisi di list) supaya
+    // render ulang sebagian (retry/regenerasi 1 scene) tetap konsisten
+    // dengan render penuh: poseEnd[N] = POSE_CYCLE[(seed + N - 1) % 8],
+    // poseStart[N] = poseEnd[N-1] (scene 1: "standing still").
+    fun fillPosesFromCycle(bible: StoryBible, plans: List<V2ScenePlan>): List<V2ScenePlan> {
+        val cycle = ScriptPools.POSE_CYCLE
+        val seed = bible.title.hashCode()
+        return plans.map { plan ->
+            val n = plan.sceneNumber
+            val end = if (plan.poseEnd.isBlank()) {
+                cycle[Math.floorMod(seed + n - 1, cycle.size)]
+            } else {
+                plan.poseEnd
+            }
+            val start = if (plan.poseStart.isBlank()) {
+                if (n <= 1) "standing still" else cycle[Math.floorMod(seed + n - 2, cycle.size)]
+            } else {
+                plan.poseStart
+            }
+            plan.copy(poseStart = start, poseEnd = end)
+        }
     }
 }

@@ -30,7 +30,10 @@ enum class VisualStyle(val labelId: String) {
 
 // Empat engine tujuan v1 — output TEKS saja, app tidak generate video.
 enum class TargetEngine(val labelId: String, val maxWords: Int, val minWords: Int) {
-    FLOW("Flow / Veo", 200, 40),
+    // v2.1 fix6 (riset) — FLOW 200 -> 180: 180 adalah batas DESAIN (dokumen
+    // v3 + target kata lapangan), 200 di kode adalah cap yang tidak pernah
+    // jadi sumber kebenaran. Meter mengikuti engine.maxWords otomatis.
+    FLOW("Flow / Veo", 180, 40),
     WAN("WanGP", 120, 40),
     KLING("Kling", 100, 60),
     SEEDANCE("Seedance", 100, 60)
@@ -279,7 +282,13 @@ data class ShotInput(
     // dari audioEn (SFX per scene).
     val dialogue: DialogueLine? = null,
     val characterCard: CharacterCard? = null,
-    val ambienceEn: String = ""
+    val ambienceEn: String = "",
+    // v2.1 fix6 (riset) — kata/karakter klausa aspek ("Vertical 9:16
+    // framing." = 3 kata, 22 karakter) yang ditempel ModeRender SETELAH
+    // PromptEngine selesai. Anggaran kata/karakter efektif = cap engine
+    // DIKURANGI field ini (0 = jalur v1 wizard, tanpa klausa aspek).
+    val aspectWords: Int = 0,
+    val aspectChars: Int = 0
 )
 
 data class GeneratedPrompt(

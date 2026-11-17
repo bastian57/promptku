@@ -114,8 +114,8 @@ object PromptCore {
             format = "${engine.labelId} • 10 dtk • 24fps",
             shot = "$shot, $angle, $lens",
             subject = subject,
-            action = "[00:00-00:05] $poseStart, $action begins. " +
-                "[00:05-00:10] The action completes as $poseEnd.",
+            action = "[00:00-00:04] $poseStart, $action begins. " +
+                "[00:04-00:08] The action completes as $poseEnd.",
             world = world,
             light = light,
             camera = camera,

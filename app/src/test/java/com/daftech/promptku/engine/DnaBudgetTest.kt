@@ -53,11 +53,11 @@ class DnaBudgetTest {
     fun flowKeepsWorldBeatsAndAudioWithLongDna() {
         val prompt = PromptEngine.build(rikoInput())
         assertTrue(prompt.text.contains("tire repair shop"))
-        assertTrue(prompt.text.contains("[00:00-00:05]"))
-        assertTrue(prompt.text.contains("[00:05-00:10]"))
+        assertTrue(prompt.text.contains("[00:00-00:04]"))
+        assertTrue(prompt.text.contains("[00:04-00:08]"))
         assertTrue(prompt.text.contains("Audio:"))
         assertTrue(prompt.text.contains("golden-hour"))
-        assertTrue(prompt.wordCount <= 200)
+        assertTrue(prompt.wordCount <= 180)
         assertTrue(prompt.warnings.any { it.contains("dipangkas") })
         assertTrue(prompt.warnings.any { it.contains("129") })
     }
@@ -70,7 +70,7 @@ class DnaBudgetTest {
         val prompt = PromptEngine.build(input)
         assertFalse(prompt.warnings.any { it.contains("dipangkas") })
         assertTrue(prompt.text.contains("tire repair shop"))
-        assertTrue(prompt.text.contains("[00:00-00:05]"))
+        assertTrue(prompt.text.contains("[00:00-00:04]"))
         assertTrue(prompt.text.contains("Audio:"))
     }
 
@@ -79,10 +79,10 @@ class DnaBudgetTest {
         val input = rikoInput().copy(secondCharacter = CharacterDna("Cell", rikoDna))
         val prompt = PromptEngine.build(input)
         assertTrue(prompt.text.contains("tire repair shop"))
-        assertTrue(prompt.text.contains("[00:00-00:05]"))
+        assertTrue(prompt.text.contains("[00:00-00:04]"))
         assertTrue(prompt.text.contains("Audio:"))
         assertTrue(prompt.text.contains("Cell"))
-        assertTrue(prompt.wordCount <= 200)
+        assertTrue(prompt.wordCount <= 180)
         assertTrue(prompt.warnings.any { it.contains("dipangkas") })
     }
 
@@ -93,7 +93,7 @@ class DnaBudgetTest {
             world = WorldLock("Bengkel Panjang", longWorld)
         )
         val prompt = PromptEngine.build(input)
-        assertTrue(prompt.wordCount <= 200)
+        assertTrue(prompt.wordCount <= 180)
         assertTrue(prompt.warnings.any { it.contains("dipangkas") })
     }
 
@@ -105,5 +105,24 @@ class DnaBudgetTest {
             assertTrue(prompt.wordCount <= engine.maxWords)
             assertFalse(prompt.warnings.any { it.contains("dipangkas") })
         }
+    }
+
+    @Test
+    fun longDnaNeverDropsDialogue() {
+        // v2.1 fix6 (riset) — trimToWords dulu membuang kalimat dari AKHIR
+        // head: kalimat dialog (yang duduk di akhir prompt, di dalam
+        // kalimat Audio) jadi korban pertama saat DNA panjang. Kalimat
+        // Audio/dialog kini dilindungi trim — dialog harus tetap ada.
+        val input = rikoInput().copy(
+            dialogue = DialogueLine(
+                speaker = "Riko",
+                tone = "a low, steady voice",
+                textEn = "I don't understand.",
+                language = DialogueLang.EN
+            )
+        )
+        val prompt = PromptEngine.build(input)
+        assertTrue(prompt.text, prompt.text.contains("Riko says, in a low, steady voice: I don't understand."))
+        assertTrue(prompt.wordCount <= 180)
     }
 }

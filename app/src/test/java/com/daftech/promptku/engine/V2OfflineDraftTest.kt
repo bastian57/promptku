@@ -225,7 +225,7 @@ class V2OfflineDraftTest {
         )
         assertFalse(rendered.wanText.contains("standing still"))
         assertTrue(rendered.wanText.contains("console lights blink steadily"))
-        assertTrue(rendered.flowText.contains("Ends as standing tall."))
+        assertTrue(rendered.flowText.contains("the motion settles, ending as standing tall."))
         assertTrue(rendered.flowText.contains("Audio: $stationAmbience."))
         assertFalse(rendered.flowText.contains("neon-lit streets"))
         assertFalse(rendered.flowText.contains("dust drifts"))

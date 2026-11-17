@@ -93,6 +93,42 @@ class ModeRenderTest {
         assertTrue(assigned.none { EffectLibrary.FIGHT_MOVES_ALL.any { m -> m.id == it.effectId } })
     }
 
+    // --- v2.1 fix6 (riset): pose siklus Mode A cloud ---
+
+    @Test
+    fun renderAllFillsCloudPosesFromCycle() {
+        // Rencana cloud tanpa pose (prompter JSON tak ada field pose) dulu
+        // jatuh ke "Ends as standing firm." 18x (Bima) — kini diisi dari
+        // POSE_CYCLE dengan seed = hash judul, rantai antar scene.
+        val plans = (1..6).map { plan(it, "walks forward number $it") }
+        val rendered = ModeRender.renderAll(bible(), plans, V2Mode.TEXT_ONLY, isFight = false)
+        val ends = rendered.map { it.plan.poseEnd }
+        assertTrue(ends.toSet().size > 1)
+        assertFalse(ends.all { it == "standing firm" })
+        // Rantai: poseStart[N] == poseEnd[N-1].
+        for (i in 1 until rendered.size) {
+            assertEquals(rendered[i - 1].plan.poseEnd, rendered[i].plan.poseStart)
+        }
+    }
+
+    @Test
+    fun renderAllKeepsExistingPoses() {
+        val plans = (1..3).map {
+            plan(it, "walks forward number $it").copy(poseStart = "kneeling", poseEnd = "rising slowly")
+        }
+        val rendered = ModeRender.renderAll(bible(), plans, V2Mode.TEXT_ONLY, isFight = false)
+        assertTrue(rendered.all { it.plan.poseStart == "kneeling" && it.plan.poseEnd == "rising slowly" })
+    }
+
+    @Test
+    fun renderAllPosesAreDeterministic() {
+        val plans = (1..6).map { plan(it, "walks forward number $it") }
+        val first = ModeRender.renderAll(bible(), plans, V2Mode.TEXT_ONLY, isFight = false)
+        val second = ModeRender.renderAll(bible(), plans, V2Mode.TEXT_ONLY, isFight = false)
+        assertEquals(first.map { it.plan.poseEnd }, second.map { it.plan.poseEnd })
+        assertEquals(first.map { it.plan.poseStart }, second.map { it.plan.poseStart })
+    }
+
     @Test
     fun effectCameraAndLensOverridePlan() {
         val grapple = plan(1, "grapples the giant").copy(effectId = "grapple")

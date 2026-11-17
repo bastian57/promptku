@@ -211,7 +211,11 @@ class V2Fix5Test {
         val prompt = DirectorPrompts.prompterUser(stormBible(dialogueLang = "EN"), listOf(1), "")
         assertTrue(prompt, prompt.contains("DIALOGUE LANGUAGE"))
         assertTrue(prompt, prompt.contains("dialogue_en is the primary line"))
-        assertTrue(prompt, prompt.contains("ESCALATION"))
+        // v2.1 fix6 (riset) — aturan ESCALATION generik diganti blok beat
+        // posisional: batch scene 1 = BEAT 1 OF 4 (Pembuka, scene 1-3).
+        assertTrue(prompt, prompt.contains("BEAT 1 OF 4"))
+        assertTrue(prompt, prompt.contains("scenes 1-3"))
+        assertTrue(prompt, prompt.contains("FORBIDDEN in this beat"))
         assertTrue(prompt, prompt.contains("AT MOST ONE scene"))
         assertTrue(prompt, prompt.contains("does NOT count"))
     }
@@ -221,6 +225,6 @@ class V2Fix5Test {
         val prompt = DirectorPrompts.prompterUser(stormBible(dialogueLang = "ID"), listOf(1), "")
         assertTrue(prompt, prompt.contains("DIALOGUE LANGUAGE"))
         assertTrue(prompt, prompt.contains("dialogue_id is the primary line"))
-        assertTrue(prompt, prompt.contains("ESCALATION"))
+        assertTrue(prompt, prompt.contains("BEAT 1 OF 4"))
     }
 }

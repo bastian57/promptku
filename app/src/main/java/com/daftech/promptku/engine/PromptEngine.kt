@@ -21,6 +21,12 @@ object PromptEngine {
         "Same face and proportions throughout. Hands relaxed and natural. " +
         "Lighting and background unchanged. Clean frame, no text, no logos, no subtitles, no watermark."
 
+    // Cap karakter Flow (fix6 riset): kotak prompt Flow ~1.400 karakter
+    // (batas mengikatnya karakter, bukan kata — S17 Kaito 1.453 karakter
+    // sudah lewat batas). Batas aman 1.300; kelebihan dipangkas dari
+    // boilerplate (material/kontinuitas/gestur), bukan dari konten.
+    const val FLOW_CHAR_CAP: Int = 1300
+
     // Kunci positif Kling / Seedance — kedua engine ini tidak memakai field negative.
     const val POSITIVE_LOCK_SHORT: String =
         "Locked camera. The same character design stays consistent. Clean frame, no text, no logos."
@@ -96,12 +102,26 @@ object PromptEngine {
     }
 
     fun build(input: ShotInput): GeneratedPrompt {
-        val engine = input.engine ?: TargetEngine.FLOW
+        // v2.1 fix6 (riset) — normalisasi SEKALI di pintu masuk: bersihkan
+        // titik di ujung field LLM/user (actionEn, audioEn, materialEn,
+        // poseStart, poseEnd) supaya template yang menempel "." tidak pernah
+        // menghasilkan "..". build() adalah corong tunggal (v1 wizard + v2
+        // Mode A via buildAll); cleanField idempotent, jadi pembersihan
+        // ganda di shotInputFor tidak masalah. Dialog dibersihkan di
+        // renderDialogue (teksnya hidup di DialogueLine, bukan field ini).
+        val clean = input.copy(
+            actionEn = ModeRender.cleanField(input.actionEn),
+            audioEn = ModeRender.cleanField(input.audioEn),
+            materialEn = ModeRender.cleanField(input.materialEn),
+            poseStart = ModeRender.cleanField(input.poseStart),
+            poseEnd = ModeRender.cleanField(input.poseEnd)
+        )
+        val engine = clean.engine ?: TargetEngine.FLOW
         return when (engine) {
-            TargetEngine.FLOW -> buildFlow(input)
-            TargetEngine.WAN -> buildWan(input)
-            TargetEngine.KLING -> buildKling(input)
-            TargetEngine.SEEDANCE -> buildSeedance(input)
+            TargetEngine.FLOW -> buildFlow(clean)
+            TargetEngine.WAN -> buildWan(clean)
+            TargetEngine.KLING -> buildKling(clean)
+            TargetEngine.SEEDANCE -> buildSeedance(clean)
         }
     }
 
@@ -194,7 +214,11 @@ object PromptEngine {
             if (capped.isBlank()) ", facing ${second.name}" else ", facing ${second.name}, $capped"
         } ?: ""
         val warning = if (warnings.isEmpty()) null else warnings.joinToString(" ")
-        return (mainText + secondText) to warning
+        // v2.1 fix6 (riset) — buang titik di ujung subject line DI SUMBER:
+        // deskripsi antagonis yang sudah berakhir "." ("...eternal night.")
+        // + template yang menempel "." = "night.." 18x (regresi fix5, Bima).
+        // capDnaAtSentence mempertahankan titik kalimat terakhir yang disimpan.
+        return ModeRender.cleanField(mainText + secondText) to warning
     }
 
     // Subject line v1.3 — kartu 3 jangkar menggantikan DNA verbatim bila
@@ -219,13 +243,16 @@ object PromptEngine {
     }
 
     private fun shortDna(input: ShotInput): String {
+        // v2.1 fix6 (riset) — trimEnd('.') di sumber: jalur DNA mentah
+        // mengambil 12 kata pertama — kalau deskripsi <= 12 kata dan berakhir
+        // ".", template "${shortDna}. Setting:" jadi "..".
         val card = input.characterCard
         if (card != null && !card.isEmpty()) {
-            return "${input.character?.name ?: "a person"}, ${card.subjectDescription()}"
+            return ModeRender.cleanField("${input.character?.name ?: "a person"}, ${card.subjectDescription()}")
         }
         val dna = input.character?.descriptionEn ?: ""
         val words = dna.split(Regex("\\s+")).take(12).joinToString(" ")
-        return "${input.character?.name ?: "a person"}, $words"
+        return ModeRender.cleanField("${input.character?.name ?: "a person"}, $words")
     }
 
     // v1.4.1 — default material mengikuti dunia, bukan selalu debu
@@ -253,13 +280,18 @@ object PromptEngine {
 
     // v1.4.1 — gestur kartu sebagai klausa karakter terpisah (identitas,
     // bukan pose saat ini). Null kalau kartu tidak punya gestur.
+    // v2.1 fix6 (riset) — cleanField di sumber ("Signature gesture: $gesture."
+    // + gestur berakhir "." = "..").
     private fun gestureSentence(input: ShotInput): String? {
         val gesture = input.characterCard?.gesture?.trim().orEmpty()
-        return if (gesture.isBlank()) null else "Signature gesture: $gesture."
+        return if (gesture.isBlank()) null else "Signature gesture: ${ModeRender.cleanField(gesture)}."
     }
 
+    // v2.1 fix6 (riset) — cleanField di sumber: satu tempat ini menutup
+    // semua builder (buildFlow/buildWan/buildKling/buildSeedance +
+    // styleLook/materialDefaultFor/shortWorld) dari "..".
     private fun worldText(input: ShotInput): String {
-        return input.world?.descriptionEn ?: defaultWorld(input.genre ?: Genre.DRAMA)
+        return ModeRender.cleanField(input.world?.descriptionEn ?: defaultWorld(input.genre ?: Genre.DRAMA))
     }
 
     // Versi pendek dunia (12 kata pertama) untuk engine berbatas 100 kata.
@@ -287,6 +319,8 @@ object PromptEngine {
     // dibuang; kalimat opsional dibuang dari prioritas tertinggi (dropPriority
     // terbesar dibuang duluan) sampai total kata muat. Urutan kalimat di
     // output tetap urutan narasi, bukan urutan prioritas.
+    // v2.1 fix6 (riset) — [maxChars]: cap karakter kedua (Flow ~1.300).
+    // Sesudah muat kata, kalimat opsional dibuang lagi sampai muat karakter.
     private data class Sentence(
         val text: String,
         val mandatory: Boolean,
@@ -296,7 +330,8 @@ object PromptEngine {
     private fun assembleOrdered(
         sentences: List<Sentence>,
         tail: String,
-        maxWords: Int
+        maxWords: Int,
+        maxChars: Int = Int.MAX_VALUE
     ): String {
         val kept = sentences.toMutableList()
         var count = MythFilter.countWords((kept.map { it.text } + tail).joinToString(" "))
@@ -305,15 +340,33 @@ object PromptEngine {
             kept.remove(victim)
             count = MythFilter.countWords((kept.map { it.text } + tail).joinToString(" "))
         }
-        return (kept.map { it.text } + tail).joinToString(" ")
+        var text = (kept.map { it.text } + tail).joinToString(" ")
+        while (text.length > maxChars) {
+            val victim = kept.filter { !it.mandatory }.maxByOrNull { it.dropPriority } ?: break
+            kept.remove(victim)
+            text = (kept.map { it.text } + tail).joinToString(" ")
+        }
+        return text
     }
 
     // Render dialog v1.3 — DialogueLine first-class (ID/EN + nada).
     // Tanpa DialogueLine, jatuh ke field lama dialogueName/dialogueLine
     // (template + tes lama + wizard v1) dengan perilaku lama yang sama.
-    // Flow: `Nama says, in [tone]: "teks"` (nada dulu, lalu kalimat);
-    // Kling: `Nama (tone): "teks"` (tone default "determined");
-    // Seedance ID: `Language: Indonesian. Nama says, in [tone]: teks`;
+    // v2.1 fix6 (riset) — format dialog resmi 2026 TANPA tanda kutip:
+    // `Nama says: teks` (panduan Enterprise Okt 2026 + Video Generation
+    // Prompt Guide 2026 — tanda kutip bisa membuat model me-render teks di
+    // layar). Dulu: Flow `Nama says, "teks"`, Kling `Nama (tone): "teks"`.
+    // Nada dipertahankan ("says, in a low voice: teks"). Seedance ID sudah
+    // tanpa kutip sejak dulu. CATATAN LAPANGAN: Broly S1–S3 berkutip terbukti
+    // jalan di Flow — uji 1 scene dialog dulu sebelum menganggap format baru
+    // ini final; kalau ucapan memburuk, kembali ke kutip.
+    // PENTING: teks dialog di sini TIDAK di-cleanField — titik di ujung
+    // teks ("I don't understand.") adalah PENUTUP kalimat Audio di template
+    // Mode A ("Audio: $audio. $dialog — template TIDAK menempel "." lagi
+    // sesudah dialog, jadi cleanField akan memakan titik penutupnya dan
+    // kalimat berikutnya menempel ("understand Starts from..."). Pembersihan
+    // titik dialog hanya di Mode B (renderReference) — di sana template
+    // memang menempel "." sesudah dialog.
     // WanGP: "" (bisu — dialog ke Lembar Suara, bukan prompt).
     fun renderDialogue(input: ShotInput, engine: TargetEngine): String {
         val line = input.dialogue
@@ -326,21 +379,21 @@ object PromptEngine {
                 TargetEngine.WAN -> ""
                 TargetEngine.KLING -> {
                     val toneText = tone.ifBlank { "determined" }
-                    "$name ($toneText): \"$text\""
+                    "$name ($toneText): $text"
                 }
                 TargetEngine.SEEDANCE -> {
                     val toneText = tone.ifBlank { "a calm voice" }
                     if (line.language == DialogueLang.ID) {
                         "Language: Indonesian. $name says, in $toneText: $text"
                     } else {
-                        "$name says, in $toneText: \"$text\""
+                        "$name says, in $toneText: $text"
                     }
                 }
                 TargetEngine.FLOW -> {
                     if (tone.isBlank()) {
-                        "$name says, \"$text\""
+                        "$name says: $text"
                     } else {
-                        "$name says, in $tone: \"$text\""
+                        "$name says, in $tone: $text"
                     }
                 }
             }
@@ -350,9 +403,9 @@ object PromptEngine {
         val text = input.dialogueLine.trim()
         return when (engine) {
             TargetEngine.WAN -> ""
-            TargetEngine.KLING -> "$name (determined): \"$text\""
-            TargetEngine.SEEDANCE -> "$name says, \"$text\""
-            TargetEngine.FLOW -> "$name says, \"$text\""
+            TargetEngine.KLING -> "$name (determined): $text"
+            TargetEngine.SEEDANCE -> "$name says: $text"
+            TargetEngine.FLOW -> "$name says: $text"
         }
     }
 
@@ -379,19 +432,21 @@ object PromptEngine {
         // v1.4.1 — rantai pose tinggal di klausa kontinuitas (bukan di
         // timeline aksi): "Starts from X, ends as Y". Kalau pose awal =
         // pose akhir, dilewati (pose statis, aksi yang bicara).
-        val start = input.poseStart.trim()
-        val end = input.poseEnd.trim()
+        // v2.1 fix6 (riset) — cleanField di tiap bagian (pose LLM bisa
+        // berakhir "." — "ends as standing firm." + "." = "..").
+        val start = ModeRender.cleanField(input.poseStart)
+        val end = ModeRender.cleanField(input.poseEnd)
         if (start.isNotBlank() && end.isNotBlank() && start != end) {
             parts.add("Starts from $start, ends as $end")
         }
         if (input.screenDirection.isNotBlank()) {
-            parts.add("Screen direction: ${input.screenDirection.trim()}")
+            parts.add("Screen direction: ${ModeRender.cleanField(input.screenDirection)}")
         }
         if (input.axisSide.isNotBlank()) {
-            parts.add("camera stays on the ${input.axisSide.trim()} side of the axis")
+            parts.add("camera stays on the ${ModeRender.cleanField(input.axisSide)} side of the axis")
         }
         if (input.transition.isNotBlank()) {
-            parts.add("Transition: ${input.transition.trim()}")
+            parts.add("Transition: ${ModeRender.cleanField(input.transition)}")
         }
         return parts.joinToString(", ")
     }
@@ -399,6 +454,10 @@ object PromptEngine {
     // protectedTail: kalimat kunci (lock / constraints) yang TIDAK BOLEH
     // terpotong trim. Kalau teks kepanjangan, yang dipangkas hanya bagian
     // kepala — tail selalu dipertahankan utuh di akhir.
+    // v2.1 fix6 (riset) — [maxWordsOverride]: anggaran kata EFEKTIF (cap
+    // engine dikurangi kata klausa aspek yang ditempel ModeRender sesudah
+    // ini — 3 kata; tanpa ini total export bisa lewat cap 3 kata). [maxChars]:
+    // cap karakter (Flow ~1.300) — trimToChars sebagai pengaman lapis kedua.
     private fun finish(
         engine: TargetEngine,
         raw: String,
@@ -406,16 +465,22 @@ object PromptEngine {
         input: ShotInput,
         protectedTail: String? = null,
         extraWarnings: List<String> = emptyList(),
-        meter: String = ""
+        meter: String = "",
+        maxWordsOverride: Int? = null,
+        maxChars: Int = Int.MAX_VALUE
     ): GeneratedPrompt {
+        val cap = maxWordsOverride ?: engine.maxWords
         val filtered = MythFilter.filterMyths(raw)
-        val trimmed = if (protectedTail != null && filtered.endsWith(protectedTail)) {
+        var trimmed = if (protectedTail != null && filtered.endsWith(protectedTail)) {
             val head = filtered.substring(0, filtered.length - protectedTail.length).trim()
-            val headBudget = engine.maxWords - MythFilter.countWords(protectedTail)
+            val headBudget = cap - MythFilter.countWords(protectedTail)
             val trimmedHead = MythFilter.trimToWords(head, headBudget)
             "$trimmedHead $protectedTail"
         } else {
-            MythFilter.trimToWords(filtered, engine.maxWords)
+            MythFilter.trimToWords(filtered, cap)
+        }
+        if (trimmed.length > maxChars) {
+            trimmed = MythFilter.trimToChars(trimmed, maxChars, protectedTail)
         }
         val warnings = warningsFor(input).toMutableList()
         warnings.addAll(extraWarnings)
@@ -429,14 +494,14 @@ object PromptEngine {
                 .map { it.split(Regex("\\s+")).take(6).joinToString(" ") }
             val detail = if (dropped.isEmpty()) "" else " Yang hilang: ${dropped.joinToString("; ")}…"
             warnings.add(
-                "Prompt dipangkas dari $beforeCount ke $afterCount kata supaya muat dalam ${engine.maxWords} kata.$detail " +
+                "Prompt dipangkas dari $beforeCount ke $afterCount kata supaya muat dalam $cap kata.$detail " +
                 "Periksa dunia, aksi, dan audio — pendekkan DNA atau dunia kalau sering terjadi."
             )
         }
         val count = afterCount
         if (count < engine.minWords) {
             warnings.add(
-                "Prompt hanya $count kata (target ${engine.minWords}-${engine.maxWords}). " +
+                "Prompt hanya $count kata (target ${engine.minWords}-$cap). " +
                 "Tambah detail aksi, dunia, atau cahaya supaya model tidak menebak-nebak."
             )
         }
@@ -450,9 +515,16 @@ object PromptEngine {
     }
 
     // Flow / Veo — kamera ditulis PERTAMA, dua beat timestamp, audio di baris sendiri.
-    // v1.4.1 — timeline HANYA aksi ("[00:00-00:05] $action."), pose
+    // v1.4.1 — timeline HANYA aksi ("[00:00-00:04] $action."), pose
     // pindah ke klausa kontinuitas ("Starts from X, ends as Y"); aksi
-    // TIDAK diulang mentah di beat kedua ("Ends as $poseEnd.").
+    // TIDAK diulang mentah di beat kedua.
+    // v2.1 fix6 (riset) — timestamp SADAR-ENGINE: klip Veo maks 8 detik
+    // ("[00:00-00:04]"/"[00:04-00:08]"); timestamp 10 detik lama meminta
+    // konten di detik 00:05–00:10 yang tidak ada di klip 8 detik. Segmen
+    // kedua BUKAN pose beku 5 detik lagi ("Ends as standing firm" = setengah
+    // klip diam — bertentangan dengan "satu momen fokus per klip"): segmen
+    // kedua kini kelanjutan aksi yang MEREDA ke pose akhir ("the motion
+    // settles, ending as ..."). Scene cerita tetap 10 detik di bible.
     private fun buildFlow(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style, worldText(input))
@@ -472,10 +544,23 @@ object PromptEngine {
         }
         val continuity = continuityPhrase(input)
         val gesture = gestureSentence(input)
+        // Anggaran kata EFEKTIF (fix6 riset): cap engine DIKURANGI klausa
+        // aspek yang ditempel ModeRender sesudah ini (3 kata, 22 karakter)
+        // — tanpa ini total export lewat cap 3 kata. Cap karakter efektif
+        // sama (1.300 - karakter aspek).
+        val maxWords = TargetEngine.FLOW.maxWords - input.aspectWords
+        val maxChars = FLOW_CHAR_CAP - input.aspectChars
         // Anggaran DNA v1.2.1 (bug Riko): hitung kata di luar DNA dulu, sisa
         // anggaran untuk DNA. Lantai 25 kata menjaga 1-2 kalimat pertama DNA
         // (ciri wajah paling penting) tetap ada; kalau dunia/aksi juga
         // kepanjangan, laporan trim di finish() yang memberi tahu user.
+        // KOREKSI diagnosis fix6 (Akar #2): matematika DNA di sini SUDAH
+        // jujur — s1WithoutDna memakai nama hero (1 kata) sedangkan Sentence
+        // 1 memakai subject (S kata), selisihnya tepat (S - 1); dnaAllowed =
+        // maxWords - otherWords membatasi total di maxWords - 1. Yang bocor
+        // bukan DNA, melainkan klausa aspek 3 kata DI LUAR anggaran (sudah
+        // diperbaiki di atas lewat maxWords/maxChars efektif). Iterasi dua
+        // langkah TIDAK diperlukan.
         // v2.1 fix5 — "in ${worldText}" berasumsi dunia adalah frasa; sejak
         // fix4 dunia adalah KALIMAT ("Lightning splits...") — "in Lightning
         // splits..." tidak gramatikal. Dunia jadi kalimat sendiri
@@ -486,17 +571,17 @@ object PromptEngine {
         val otherWords = MythFilter.countWords(
             listOf(
                 s1WithoutDna,
-                "[00:00-00:05] $action.",
+                "[00:00-00:04] $action.",
                 "$material.",
-                "[00:05-00:10] Ends as $poseEnd. ${look.second}, ${look.third}.",
+                "[00:04-00:08] the motion settles, ending as $poseEnd. ${look.second}, ${look.third}.",
                 "Audio: $audio.${dialogueFlow(input)}",
                 continuity,
                 gesture ?: "",
                 FLOW_POSITIVE_LOCK
             ).joinToString(" ")
         )
-        val dnaAllowed = (TargetEngine.FLOW.maxWords - otherWords).coerceAtLeast(25)
-        val subject = subjectLineFor(input, dnaAllowed, TargetEngine.FLOW.maxWords)
+        val dnaAllowed = (maxWords - otherWords).coerceAtLeast(25)
+        val subject = subjectLineFor(input, dnaAllowed, maxWords)
         val sentences = listOf(
             Sentence(
                 "$shot, $angle, $lens, ${look.first}. ${subject.first}. Setting: ${worldText(input)}. $camera. Lighting: $light.$hide",
@@ -504,7 +589,7 @@ object PromptEngine {
                 dropPriority = 0
             ),
             Sentence(
-                "[00:00-00:05] $action.",
+                "[00:00-00:04] $action.",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -514,7 +599,7 @@ object PromptEngine {
                 dropPriority = 3
             ),
             Sentence(
-                "[00:05-00:10] Ends as $poseEnd. ${look.second}, ${look.third}.",
+                "[00:04-00:08] the motion settles, ending as $poseEnd. ${look.second}, ${look.third}.",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -532,11 +617,13 @@ object PromptEngine {
         } else {
             emptyList()
         }
-        val raw = assembleOrdered(sentences, FLOW_POSITIVE_LOCK, TargetEngine.FLOW.maxWords)
+        val raw = assembleOrdered(sentences, FLOW_POSITIVE_LOCK, maxWords, maxChars)
         return finish(
             TargetEngine.FLOW, raw, null, input, FLOW_POSITIVE_LOCK,
             extraWarnings = listOfNotNull(subject.second),
-            meter = PromptCore.meterLine(input, TargetEngine.FLOW)
+            meter = PromptCore.meterLine(input, TargetEngine.FLOW),
+            maxWordsOverride = maxWords,
+            maxChars = maxChars
         )
     }
 
@@ -570,9 +657,11 @@ object PromptEngine {
             val extra = " $mat. The same character design stays consistent in every frame."
             text = MythFilter.filterMyths(text + extra)
         }
+        // v2.1 fix6 (riset) — anggaran efektif (cap dikurangi klausa aspek).
         return finish(
             TargetEngine.WAN, text, WAN_NEGATIVE_MANDARIN, input,
-            meter = PromptCore.meterLine(input, TargetEngine.WAN)
+            meter = PromptCore.meterLine(input, TargetEngine.WAN),
+            maxWordsOverride = TargetEngine.WAN.maxWords - input.aspectWords
         )
     }
 
@@ -626,10 +715,14 @@ object PromptEngine {
         } else {
             emptyList()
         }
-        val raw = assembleOrdered(sentences, POSITIVE_LOCK_SHORT, TargetEngine.KLING.maxWords)
+        val raw = assembleOrdered(
+            sentences, POSITIVE_LOCK_SHORT,
+            TargetEngine.KLING.maxWords - input.aspectWords
+        )
         return finish(
             TargetEngine.KLING, raw, null, input, POSITIVE_LOCK_SHORT,
-            meter = PromptCore.meterLine(input, TargetEngine.KLING)
+            meter = PromptCore.meterLine(input, TargetEngine.KLING),
+            maxWordsOverride = TargetEngine.KLING.maxWords - input.aspectWords
         )
     }
 
@@ -668,8 +761,10 @@ object PromptEngine {
                 mandatory = true,
                 dropPriority = 0
             ),
+            // v2.1 fix6 (riset) — segmen ketiga kelanjutan aksi yang mereda
+            // ke pose akhir (bukan "Ends as ..." yang berdiri sendiri).
             Sentence(
-                "[4-6s] Ends as $poseEnd. Audio: $audio.",
+                "[4-6s] the motion settles, ending as $poseEnd. Audio: $audio.",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -683,10 +778,14 @@ object PromptEngine {
         } else {
             emptyList()
         }
-        val raw = assembleOrdered(sentences, tail, TargetEngine.SEEDANCE.maxWords)
+        val raw = assembleOrdered(
+            sentences, tail,
+            TargetEngine.SEEDANCE.maxWords - input.aspectWords
+        )
         return finish(
             TargetEngine.SEEDANCE, raw, null, input, tail,
-            meter = PromptCore.meterLine(input, TargetEngine.SEEDANCE)
+            meter = PromptCore.meterLine(input, TargetEngine.SEEDANCE),
+            maxWordsOverride = TargetEngine.SEEDANCE.maxWords - input.aspectWords
         )
     }
 }

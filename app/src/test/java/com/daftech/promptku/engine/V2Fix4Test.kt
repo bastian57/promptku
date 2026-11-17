@@ -204,10 +204,11 @@ class V2Fix4Test {
         val bible = brolyBible()
         val p = plan(1, "Broly cups both hands", dialogueEn = "My turn!", dialogueSpeaker = "Broly")
         val text = ModeRender.renderReference(bible, p, shot(p), TargetEngine.FLOW, imageCount = 3)
-        assertTrue(text, text.contains("Dialogue (Broly): \"My turn!\""))
+        // v2.1 fix6 (riset) — format dialog resmi 2026 tanpa kutip.
+        assertTrue(text, text.contains("Broly says: My turn!"))
         val unknown = plan(1, "Broly cups both hands", dialogueEn = "My turn!")
         val unknownText = ModeRender.renderReference(bible, unknown, shot(unknown), TargetEngine.FLOW, imageCount = 3)
-        assertTrue(unknownText, unknownText.contains("Dialogue: \"My turn!\""))
+        assertTrue(unknownText, unknownText.contains("Broly says: My turn!"))
         assertFalse(unknownText, unknownText.contains("Dialogue ("))
     }
 

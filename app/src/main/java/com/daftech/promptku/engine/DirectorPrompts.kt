@@ -119,14 +119,97 @@ object DirectorPrompts {
         "character card itself. Never name a franchise character. Reply with JSON only, " +
         "no markdown, no extra text."
 
+    /** Blok instruksi posisional untuk SATU beat (fix6 riset). Beda dari
+     *  baris aturan global yang gagal 2x: ini posisional (beat + nomor
+     *  scene + intensitas yang bisa dicek), leksikal (kata larangan per
+     *  beat, bukan penilaian "jangan terlalu besar"), dan ber-state
+     *  (ledger menyebut apa yang sudah terpakai). */
+    private fun beatBlockText(
+        bible: StoryBible,
+        beat: BeatRange,
+        beatMap: List<BeatRange>,
+        ledger: ArcLedger
+    ): String {
+        val total = beatMap.last().lastScene
+        val role = BeatMap.roleOf(beat.beatIndex, bible.beats)
+        val next = beatMap.firstOrNull { it.beatIndex == beat.beatIndex + 1 }
+        val head = "YOU ARE WRITING BEAT ${beat.beatIndex + 1} OF ${beatMap.size} — " +
+            "\"${beat.name.uppercase()}\" (scenes ${beat.firstScene}-${beat.lastScene} of $total). " +
+            "Intensity ${beat.intensity} of 5."
+        val forbiddenFinality = "FORBIDDEN in this beat — do not write these words in " +
+            "action_en OR narration_id: ${ArcLexicon.PROMPT_FORBIDDEN_FINALITY_EN}. " +
+            "(Indonesian narration: ${ArcLexicon.PROMPT_FORBIDDEN_FINALITY_ID}.)"
+        val body = when (role) {
+            BeatRole.OPENING -> "Beat job: introduce the world, the hero, and the threat. " +
+                "The antagonist MAY enter once here (arrive / descend / crash down from " +
+                "the sky or sea). No real fight yet: stances, approaches, a look, a first " +
+                "short exchange at most. $forbiddenFinality " +
+                "FORBIDDEN in this beat: any BIG attack (a named finishing move, or a " +
+                "massive / blinding / explosive / concentrated attack). Small moves only: " +
+                "punch, kick, block, dodge, stance, approach. " +
+                "NARRATION for this beat: set the scene and the threat. Never claim this " +
+                "is the first, the last, or the peak of anything — the story has just started."
+            BeatRole.EARLY -> "Beat job: the first real confrontation. Small exchanges, " +
+                "the hero slightly losing. NO victory yet, NO finality, NO resolution. " +
+                "$forbiddenFinality " +
+                "FORBIDDEN in this beat: a NAMED finishing move, and more than ONE big " +
+                "attack in this whole beat. " +
+                "NARRATION for this beat: raise the stakes, never close them. Never say " +
+                "the fight is won, over, or at its peak."
+            BeatRole.LATE -> "Beat job: stakes rise toward the climax. Bigger attacks are " +
+                "allowed (at most TWO big attacks in this whole beat), but NOT the " +
+                "finishing move. $forbiddenFinality " +
+                "FORBIDDEN in this beat: resolution words " +
+                "(${ArcLexicon.PROMPT_FORBIDDEN_RESOLUTION_EN}; Indonesian: " +
+                "${ArcLexicon.PROMPT_FORBIDDEN_RESOLUTION_ID}). " +
+                "A NAMED special move may appear here — but only ONCE per film, and the " +
+                "ledger below says whether one is already spent. " +
+                "NARRATION for this beat: rising tension, never a climax claim."
+            BeatRole.CLIMAX -> "Beat job: THE climax — the ONLY place for the finishing " +
+                "move and for finality claims. The antagonist falls HERE: show the fall " +
+                "in the ACTION (armor shattering, villain collapsing), not only in the " +
+                "narration. ALLOWED in this beat (and ONLY here): final, last, ultimate, " +
+                "peak, climax, decisive, and \"serangan terakhir\" / \"puncak\" in " +
+                "narration_id. The NAMED finishing move is used HERE (once per film) — " +
+                "if the ledger says one is already spent, write a DIFFERENT finishing move. " +
+                "NARRATION for this beat: the peak, the turning point, the fall of the antagonist."
+            BeatRole.FALLING -> "Beat job: falling action after the climax. The fight is " +
+                "OVER — no new big attacks, no new entrances, no new challenges. " +
+                "$forbiddenFinality " +
+                "NARRATION for this beat: the cost of the victory, the world settling."
+            BeatRole.CLOSING -> "Beat job: AFTERMATH ONLY. The fight is OVER. No fighting, " +
+                "no challenge, no new attack, no new entrance, no threat returning. " +
+                "FORBIDDEN in this beat: any fight verb (punch, kick, slam, strike, hurl, " +
+                "unleash, blast, clash, challenge, threaten, attack), any BIG attack, any " +
+                "new entrance. ALLOWED in this beat (and ONLY here): victory and peace " +
+                "words (victorious, triumph, free, peace, damai, tenang, kemenangan, " +
+                "telah usai). NARRATION for this beat: calm, closing, looking forward. " +
+                "Never say the tension is \"rising\" or \"peaking\" — it is falling."
+        }
+        val state = "STATE SO FAR (already used — do NOT repeat): ${ledger.describe()}"
+        val nextLine = if (next != null) {
+            "NEXT BEAT (${next.name}, scenes ${next.firstScene}-${next.lastScene}). " +
+                "End this beat's last scene so the next beat can continue — never end it with a winner."
+        } else {
+            "This is the last beat — end the film here."
+        }
+        return "$head\n$body\n$state\n$nextLine"
+    }
+
     /** Satu batch scene. [sceneNumbers] = nomor scene yang diminta (1-based).
      *  v2.1 — [retryReasons]: alasan gerbang yang gagal per scene (retry gerbang
-     *  6 / regenerasi 1 scene) — prompter wajib memperbaiki TEPAT masalah itu. */
+     *  6 / regenerasi 1 scene) — prompter wajib memperbaiki TEPAT masalah itu.
+     *  v2.1 fix6 (riset) — [ledger]: state alur yang sudah terpakai di batch
+     *  sebelumnya (jurus besar, entrance villain, klaim menang). Prompter
+     *  kini menulis SATU BEAT per batch (BeatMap): blok beat di bawah
+     *  MENGGANTI aturan ESCALATION generik fix5 (yang gagal 2x di lapangan
+     *  karena tak memberi LLM posisi, state, dan verifikasi). */
     fun prompterUser(
         bible: StoryBible,
         sceneNumbers: List<Int>,
         previousExit: String,
-        retryReasons: Map<Int, String> = emptyMap()
+        retryReasons: Map<Int, String> = emptyMap(),
+        ledger: ArcLedger = ArcLedger.EMPTY
     ): String {
         val hero = bible.hero
         val heroBlock = if (hero == null) "No hero defined."
@@ -136,6 +219,13 @@ object DirectorPrompts {
             "Antagonist: ${bible.antagonistName} — ${bible.antagonistDescEn}."
         val beatsBlock = bible.beats.joinToString("\n") { b ->
             "- beat ${b.index} ${b.name}: ${b.summaryEn}"
+        }
+        val beatMap = BeatMap.build(bible.totalScenes, bible.beats)
+        val beatsInBatch = sceneNumbers
+            .map { BeatMap.beatForScene(it, beatMap) }
+            .distinctBy { it.beatIndex }
+        val beatBlock = beatsInBatch.joinToString("\n") { beat ->
+            beatBlockText(bible, beat, beatMap, ledger)
         }
         val retryBlock = if (retryReasons.isEmpty()) "" else
             "RETRY — the following scenes failed validation. Fix EXACTLY these problems, " +
@@ -158,6 +248,7 @@ object DirectorPrompts {
             "${bible.worldDescEn}. Light: ${bible.lightEn}. Ambience: ${bible.ambienceEn}.\n" +
             "Aspect ratio: ${bible.aspectRatio} — compose every shot for that framing.\n" +
             "Beats:\n$beatsBlock\n" +
+            "$beatBlock\n" +
             "Previous scene exit state (continuity — this scene's entry must match it): " +
             "$previousExit\n" +
             retryBlock +
@@ -178,11 +269,9 @@ object DirectorPrompts {
             "punch/kick/grapple verbatim); a NAMED special move (Kamehameha, a named attack or " +
             "technique) may appear in AT MOST ONE scene per film — never repeat a signature move " +
             "in two scenes; the closing scene is aftermath, no big fight; " +
-            "ESCALATION: scenes in the opening beats are SMALL — approach, stance, first " +
-            "exchange; never the signature finishing move and never the biggest energy clash in " +
-            "the first half of the film. The biggest clash belongs ONLY to the climax beat (near " +
-            "the end). Each beat's action must be BIGGER than the previous beat's — tension rises " +
-            "beat by beat to ONE climax, then the closing beat is aftermath; " +
+            "the beat block above IS the escalation rule for THIS batch — follow its intensity, " +
+            "its forbidden words, and its ledger exactly (do not escalate past the beat you are " +
+            "writing, and do not close the story before the closing beat); " +
             "dialogue only in scenes where the beat needs it (most scenes: empty dialogue); " +
             "include short dialogue in at least 1 scene of this batch, unless the beat is purely visual; " +
             "DIALOGUE LANGUAGE: the user chose $langName dialogue — every dialogue line MUST be " +

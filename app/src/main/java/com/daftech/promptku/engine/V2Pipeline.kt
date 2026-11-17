@@ -144,17 +144,21 @@ class V2Pipeline(
     /** Prompter: satu batch scene saja (dipakai retry gerbang 6 + regenerasi
      *  1 scene). [retryReasons] = alasan gerbang per scene — prompter wajib
      *  memperbaiki TEPAT masalah itu (v2.1 fix6: instruksi retry generik
-     *  "fix the flagged issues" adalah alasan retry S5 Zenith gagal). */
+     *  "fix the flagged issues" adalah alasan retry S5 Zenith gagal).
+     *  v2.1 fix6 (riset) — [ledger]: state alur yang sudah terpakai di scene
+     *  lain (dihitung pemanggil dari plan yang sudah ada), ditempel ke prompt
+     *  supaya LLM tidak mengulang jurus/entrance/klaim yang sudah dipakai. */
     fun buildPromptBatch(
         bible: StoryBible,
         sceneNumbers: List<Int>,
         previousExit: String,
-        retryReasons: Map<Int, String> = emptyMap()
+        retryReasons: Map<Int, String> = emptyMap(),
+        ledger: ArcLedger = ArcLedger.EMPTY
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
             buildPrompt = {
-                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons)
+                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons, ledger)
             }
         )
         return when (result) {
@@ -176,19 +180,31 @@ class V2Pipeline(
         }
     }
 
-    /** Prompter: batch 3–4 scene per panggilan, semua scene bible. */
+    /** Prompter: satu batch per BEAT (BeatMap), semua scene bible.
+     *  v2.1 fix6 (riset) — batching mekanis chunked(4) DIGANTI batching per
+     *  beat: satu batch = satu beat, supaya prompt posisional (nama beat +
+     *  nomor scene + intensitas + kata larangan + ledger) bisa bekerja.
+     *  Untuk 18 scene/5 beat: [1–3],[4–7],[8–12],[13–15],[16–18] — jumlah
+     *  panggilan tetap 5. Sub-batch maks 5 scene (JSON prompter yang terlalu
+     *  panjang rawan terpotong). Ledger tumbuh tiap batch dari plan yang
+     *  sudah ada. */
     fun buildPrompts(
         bible: StoryBible,
         onBatch: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val all = mutableListOf<V2ScenePlan>()
         val total = bible.totalScenes
-        val batches = (1..total).chunked(4)
+        val beatMap = BeatMap.build(total, bible.beats)
+        val batches = beatMap.flatMap { beat ->
+            (beat.firstScene..beat.lastScene).toList().chunked(5)
+        }
         var previousExit = "Opening: ${bible.beats.firstOrNull()?.summaryEn.orEmpty()}"
+        var ledger = ArcLedger.EMPTY
         for ((index, batch) in batches.withIndex()) {
-            val (plans, fail) = buildPromptBatch(bible, batch, previousExit)
+            val (plans, fail) = buildPromptBatch(bible, batch, previousExit, ledger = ledger)
             if (fail != null) return all to fail
             all.addAll(plans)
+            ledger = ArcLedger.fromPlans(all, bible)
             onBatch(index + 1, batches.size)
             previousExit = plans.lastOrNull()?.let {
                 "Scene ${it.sceneNumber} ends: ${it.actionEn}. ${it.transitionEn}"

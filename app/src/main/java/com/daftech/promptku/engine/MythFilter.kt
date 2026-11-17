@@ -71,17 +71,53 @@ object MythFilter {
     // Pangkas ke batas kata dengan membuang kalimat dari AKHIR — kalimat
     // pertama (subjek + aksi) tidak pernah dibuang, karena itu yang paling
     // tidak boleh hilang kalau encoder memotong diam-diam.
+    // v2.1 fix6 (riset) — kalimat audio/dialog TIDAK PERNAH dibuang duluan:
+    // trimToWords lama membuang dari akhir head, dan kalimat dialog duduk di
+    // akhir head ("Bima says, ...") — S2/S17 Bima kehilangan dialog diam-diam
+    // saat cap diturunkan. Sekarang kalimat yang mengandung "Audio:" atau
+    // "says:" dilindungi; yang dibuang duluan adalah kalimat lain dari akhir.
     fun trimToWords(text: String, maxWords: Int): String {
         if (countWords(text) <= maxWords) return text
         val sentences = text.split(Regex("(?<=[.!])\\s+")).toMutableList()
         while (sentences.size > 1 && countWords(sentences.joinToString(" ")) > maxWords) {
-            sentences.removeAt(sentences.size - 1)
+            val idx = sentences.indexOfLast { !isProtectedSentence(it) }
+            if (idx < 0) break
+            sentences.removeAt(idx)
         }
         var out = sentences.joinToString(" ")
         if (countWords(out) > maxWords) {
             out = out.split(Regex("\\s+")).take(maxWords).joinToString(" ")
         }
         return out.trim()
+    }
+
+    private fun isProtectedSentence(sentence: String): Boolean =
+        sentence.contains("Audio:") || sentence.contains("says:") || sentence.contains("says,")
+
+    // Pangkas ke batas KARAKTER (kotak prompt Flow ~1.400 karakter — batas
+    // aman 1.300). Aturan yang sama dengan trimToWords: kalimat audio/dialog
+    // dilindungi; tail yang dilindungi (lock/constraints) selalu dipertahankan
+    // utuh di akhir. Dipakai finish() sebagai pengaman lapis kedua sesudah
+    // trim kata (kata panjang bisa lolos cap kata tapi jebol cap karakter).
+    fun trimToChars(text: String, maxChars: Int, protectedTail: String? = null): String {
+        if (text.length <= maxChars) return text
+        val tail = if (protectedTail != null && text.endsWith(protectedTail)) protectedTail else ""
+        val head = if (tail.isEmpty()) text else text.substring(0, text.length - tail.length).trim()
+        val headBudget = maxChars - tail.length
+        if (headBudget <= 0) return text.take(maxChars)
+        val sentences = head.split(Regex("(?<=[.!])\\s+")).toMutableList()
+        while (sentences.size > 1 && sentences.joinToString(" ").length > headBudget) {
+            val idx = sentences.indexOfLast { !isProtectedSentence(it) }
+            if (idx < 0) break
+            sentences.removeAt(idx)
+        }
+        var out = sentences.joinToString(" ")
+        if (out.length > headBudget) {
+            val cut = out.take(headBudget).trimEnd()
+            val lastSpace = cut.lastIndexOf(' ')
+            out = if (lastSpace > 0) cut.substring(0, lastSpace) else cut
+        }
+        return if (tail.isEmpty()) out else "$out $tail"
     }
 
     // Deteksi nama berlisensi di teks user (nama karakter / cerita).

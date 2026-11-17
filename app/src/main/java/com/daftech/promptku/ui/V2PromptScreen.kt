@@ -31,7 +31,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.daftech.promptku.engine.TargetEngine
 
-// Layar 3 v2.1 — Semua prompt scene + hasil 6 gerbang + export.
+// Layar 3 v2.1 — Semua prompt scene + hasil 7 gerbang + export.
 // v2.1: regenerasi 1 scene, persetujuan per scene, salin narasi SuaraKu,
 // export cuma engine yang aktif (default) atau semua engine (toggle).
 @Composable

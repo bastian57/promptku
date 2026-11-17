@@ -18,6 +18,7 @@ import com.daftech.promptku.data.PromptKuDatabase
 import com.daftech.promptku.data.V2BibleItem
 import com.daftech.promptku.data.V2DnaItem
 import com.daftech.promptku.data.V2SceneItem
+import com.daftech.promptku.engine.ArcLedger
 import com.daftech.promptku.engine.EffectLibrary
 import com.daftech.promptku.engine.GateResult
 import com.daftech.promptku.engine.Genre
@@ -695,10 +696,16 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         .groupBy({ it.first }, { it.second })
                         .mapValues { it.value.joinToString("; ") }
                     val prevExit = "Retry for scenes ${failedNums.joinToString(", ")}: keep continuity, fix the flagged issues."
+                    // v2.1 fix6 (riset) — ledger dari scene yang TIDAK di-retry
+                    // (yang gagal ditulis ulang, jadi pemakaian lamanya tidak
+                    // dihitung sebagai "sudah terpakai").
+                    val retryLedger = ArcLedger.fromPlans(
+                        rendered.filter { it.sceneNumber !in failedNums }.map { it.plan }, current
+                    )
                     val (retryPlans, _) = withContext(Dispatchers.IO) {
                         try {
                             withTimeout(300_000L) {
-                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons)
+                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons, retryLedger)
                             }
                         } catch (e: TimeoutCancellationException) {
                             // Retry nyangkut: pakai hasil pertama, jangan hang.
@@ -735,7 +742,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 step = V2Step.PROMPTS
                 val flagged = rendered.count { it.needsReview }
                 statusMessage = if (flagged == 0) {
-                    "Semua ${rendered.size} prompt lolos 6 gerbang validasi."
+                    "Semua ${rendered.size} prompt lolos 7 gerbang validasi."
                 } else {
                     "$flagged dari ${rendered.size} scene ditandai perlu cek manual — baca alasannya di tiap scene."
                 }
@@ -785,10 +792,15 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     .filter { it.contains("Scene $sceneNumber:") }
                 val retryReasons = if (reasons.isEmpty()) emptyMap()
                 else mapOf(sceneNumber to reasons.joinToString("; "))
+                // v2.1 fix6 (riset) — ledger dari scene lain (scene ini ditulis
+                // ulang, jadi pemakaian lamanya tidak dihitung).
+                val regenLedger = ArcLedger.fromPlans(
+                    scenes.filter { it.sceneNumber != sceneNumber }.map { it.plan }, current
+                )
                 val (newPlans, fail) = withContext(Dispatchers.IO) {
                     try {
                         withTimeout(300_000L) {
-                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons)
+                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons, regenLedger)
                         }
                     } catch (e: TimeoutCancellationException) {
                         emptyList<V2ScenePlan>() to V2Call.Fail(
@@ -996,6 +1008,12 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 if (current.episodeNumber > 1) " | Episode ${current.episodeNumber}" else ""
         )
         sb.appendLine("Dunia: ${current.worldName} — ${current.worldDescEn}")
+        // v2.1 fix6 (riset) — Veo 3.1 Quality TIDAK mendukung Ingredients
+        // (Flow Help resmi): proyek Mode B (gambar referensi) yang digenerate
+        // di Quality akan ditolak/dialihkan diam-diam — peringatkan di export.
+        if (images.isNotEmpty()) {
+            sb.appendLine("Catatan: Veo 3.1 Quality tidak mendukung Ingredients — di Flow pilih Fast atau Lite, bukan Quality.")
+        }
         sb.appendLine("Cahaya: ${current.lightEn}")
         sb.appendLine("Ambience: ${current.ambienceEn}")
         if (isOfflineDraft) sb.appendLine("PERINGATAN: DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")

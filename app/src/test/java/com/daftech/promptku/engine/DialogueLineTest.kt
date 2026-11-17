@@ -43,7 +43,7 @@ class DialogueLineTest {
             )
         )
         val prompt = PromptEngine.build(input)
-        assertTrue(prompt.text.contains("Riko says, in a low, steady voice: \"I don't understand.\""))
+        assertTrue(prompt.text.contains("Riko says, in a low, steady voice: I don't understand."))
     }
 
     @Test
@@ -54,7 +54,7 @@ class DialogueLineTest {
             dialogueLine = "I don't understand."
         )
         val prompt = PromptEngine.build(input)
-        assertTrue(prompt.text.contains("Riko says, \"I don't understand.\""))
+        assertTrue(prompt.text.contains("Riko says: I don't understand."))
     }
 
     @Test
@@ -86,7 +86,7 @@ class DialogueLineTest {
             )
         )
         val prompt = PromptEngine.build(input)
-        assertTrue(prompt.text.contains("Riko (an urgent voice): \"Wait for me.\""))
+        assertTrue(prompt.text.contains("Riko (an urgent voice): Wait for me."))
     }
 
     @Test

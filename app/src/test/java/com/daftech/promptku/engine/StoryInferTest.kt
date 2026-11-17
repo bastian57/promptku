@@ -56,6 +56,24 @@ class StoryInferTest {
     }
 
     @Test
+    fun clashOfLegendsInfersAction() {
+        // v2.1 fix6 (riset) — ide "Strom titans clash of legenda" jatuh ke
+        // FANTASI di film Bima karena "clash" bukan keyword ACTION.
+        assertEquals(Genre.ACTION, StoryInfer.infer("Strom titans clash of legenda").genre)
+    }
+
+    @Test
+    fun bentrokInfersAction() {
+        assertEquals(Genre.ACTION, StoryInfer.infer("Dua geng bentrok di jalanan").genre)
+    }
+
+    @Test
+    fun benturanBudayaStaysDrama() {
+        // "benturan" SENGAJA tidak masuk ACTION: "benturan budaya" = DRAMA.
+        assertEquals(Genre.DRAMA, StoryInfer.infer("Benturan budaya antara dua keluarga besar").genre)
+    }
+
+    @Test
     fun locationOverridesGenreWorld() {
         val inference = StoryInfer.infer("Hantu itu muncul di pantai saat senja")
         assertEquals(Genre.HOROR, inference.genre)
