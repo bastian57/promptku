@@ -476,8 +476,13 @@ object PromptEngine {
         // anggaran untuk DNA. Lantai 25 kata menjaga 1-2 kalimat pertama DNA
         // (ciri wajah paling penting) tetap ada; kalau dunia/aksi juga
         // kepanjangan, laporan trim di finish() yang memberi tahu user.
+        // v2.1 fix5 — "in ${worldText}" berasumsi dunia adalah frasa; sejak
+        // fix4 dunia adalah KALIMAT ("Lightning splits...") — "in Lightning
+        // splits..." tidak gramatikal. Dunia jadi kalimat sendiri
+        // ("Setting: ..."), cahaya kalimat sendiri ("Lighting: ...").
+        // WAJIB identik dengan Sentence di bawah (anggaran kata DNA).
         val s1WithoutDna =
-            "$shot, $angle, $lens, ${look.first}. ${input.character?.name ?: "a person"}, in ${worldText(input)}, $camera, lit with $light.$hide"
+            "$shot, $angle, $lens, ${look.first}. ${input.character?.name ?: "a person"}. Setting: ${worldText(input)}. $camera. Lighting: $light.$hide"
         val otherWords = MythFilter.countWords(
             listOf(
                 s1WithoutDna,
@@ -494,7 +499,7 @@ object PromptEngine {
         val subject = subjectLineFor(input, dnaAllowed, TargetEngine.FLOW.maxWords)
         val sentences = listOf(
             Sentence(
-                "$shot, $angle, $lens, ${look.first}. ${subject.first} in ${worldText(input)}, $camera, lit with $light.$hide",
+                "$shot, $angle, $lens, ${look.first}. ${subject.first}. Setting: ${worldText(input)}. $camera. Lighting: $light.$hide",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -547,7 +552,7 @@ object PromptEngine {
         val poseStart = input.poseStart.ifBlank { "standing still" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
         val raw = StringBuilder()
-        raw.append("${shortDna(input)} in ${worldText(input)}. ")
+        raw.append("${shortDna(input)}. Setting: ${worldText(input)}. ")
         // v1.4.1 — gestur kartu sebagai klausa terpisah (bukan di subject).
         gestureSentence(input)?.let { raw.append("$it ") }
         raw.append("$poseStart, then $action, ending $poseEnd. ")
@@ -590,7 +595,7 @@ object PromptEngine {
         val gesture = gestureSentence(input)
         val sentences = listOf(
             Sentence(
-                "${shortDna(input)}$secondName, in ${shortWorld(input)}.",
+                "${shortDna(input)}$secondName. Setting: ${shortWorld(input)}.",
                 mandatory = true,
                 dropPriority = 0
             ),

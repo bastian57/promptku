@@ -380,12 +380,19 @@ object ModeRender {
         // ditempel lagi ("Broly Broly hurls"). WAN juga menempel nama hero
         // ("Using the reference image of X, ...") — nama hero di awal aksi
         // dibuang di sana saja (stripLeadingName).
+        // v2.1 fix5 — "In $world," + "lit with $light" berasumsi dunia/cahaya
+        // adalah FRASA ("In ice floes..."). Sejak fix4 keduanya KALIMAT
+        // ("Lightning splits the bruised sky...") — "In Lightning splits..."
+        // 18x tidak gramatikal (audit Storm Titans). KLING/SEEDANCE sudah
+        // selamat ("Setting: $world.") — FLOW ikut pola itu; cahaya jadi
+        // kalimat sendiri ("Lighting: ..."). Berlaku juga untuk dunia frasa
+        // lama ("Setting: ice floes..." tetap terbaca sebagai deskripsi).
         val klingLead = if (startsWithName(action, bible)) action else "$heroName $action"
         val wanAction = stripLeadingName(action, bible)
         return when (engine) {
             TargetEngine.FLOW -> "Using the provided images for $refList, " +
                 "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $action. " +
-                "In $world, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase, lit with $light.$dialogue $audio$aspect"
+                "Setting: $world. $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. Lighting: $light.$dialogue $audio$aspect"
             TargetEngine.KLING -> "$klingLead. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
                 "Using the provided images for $refList. " +
                 "Setting: $world.$dialogue $audio$aspect"

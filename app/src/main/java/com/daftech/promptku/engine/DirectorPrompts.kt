@@ -143,6 +143,14 @@ object DirectorPrompts {
                 retryReasons.entries.sortedBy { it.key }.joinToString("\n") { (num, reason) ->
                     "- Scene $num: $reason"
                 } + "\n"
+        // v2.1 fix5 — bahasa dialog = pilihan user di Layar Ide (bible.dialogueLang).
+        // Akar keluhan lapangan: prompter TIDAK PERNAH diberi tahu pilihan ini
+        // (cuma director yang dapat baris "Dialogue language") — LLM menulis
+        // salah satu field sebagai "utama" seenaknya, render lalu jatuh ke
+        // fallback diam-diam. Sekarang pilihan ditulis eksplisit di aturan.
+        val langName = if (bible.dialogueLang == "EN") "English" else "Indonesian"
+        val langField = if (bible.dialogueLang == "EN") "dialogue_en" else "dialogue_id"
+        val otherField = if (bible.dialogueLang == "EN") "dialogue_id" else "dialogue_en"
         return "Story bible:\n" +
             "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
             "$heroBlock\n$antagonistBlock\n" +
@@ -159,17 +167,28 @@ object DirectorPrompts {
             "\"camera_move\": \"static|slow dolly-in|slow pan left|slow pan right|tracking shot|crane up|handheld\", " +
             "\"lens_mm\": 35, \"shot_size\": \"wide|medium|close-up|extreme close-up\", " +
             "\"angle\": \"eye|low|high|bird\", " +
-            "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty)\", " +
-            "\"dialogue_en\": \"... (English version of the same line, or empty)\", " +
+            "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty — PRIMARY when the user chose Indonesian)\", " +
+            "\"dialogue_en\": \"... (English, max 8 words, or empty — PRIMARY when the user chose English)\", " +
             "\"dialogue_speaker\": \"... (name of the character who says the dialogue line — hero or antagonist name, or empty if no dialogue)\", " +
             "\"audio_en\": \"sound effects + ambience for this clip\", " +
             "\"narration_id\": \"... (warm documentary voiceover in Indonesian, 1-2 sentences, Nalar tone — REQUIRED for every scene, never empty)\", " +
             "\"effect_id\": \"\" (leave empty — the app assigns effects from its internal vocabulary), " +
             "\"want_en\": \"...\", \"obstacle_en\": \"...\", \"transition_en\": \"...\"}]\n" +
             "Rules: fight moves must be DIFFERENT in every scene of the film (never repeat a " +
-            "punch/kick/grapple verbatim); the closing scene is aftermath, no big fight; " +
+            "punch/kick/grapple verbatim); a NAMED special move (Kamehameha, a named attack or " +
+            "technique) may appear in AT MOST ONE scene per film — never repeat a signature move " +
+            "in two scenes; the closing scene is aftermath, no big fight; " +
+            "ESCALATION: scenes in the opening beats are SMALL — approach, stance, first " +
+            "exchange; never the signature finishing move and never the biggest energy clash in " +
+            "the first half of the film. The biggest clash belongs ONLY to the climax beat (near " +
+            "the end). Each beat's action must be BIGGER than the previous beat's — tension rises " +
+            "beat by beat to ONE climax, then the closing beat is aftermath; " +
             "dialogue only in scenes where the beat needs it (most scenes: empty dialogue); " +
             "include short dialogue in at least 1 scene of this batch, unless the beat is purely visual; " +
+            "DIALOGUE LANGUAGE: the user chose $langName dialogue — every dialogue line MUST be " +
+            "written FIRST in $langName ($langField is the primary line); $otherField is its " +
+            "translation of the SAME line. Fill BOTH fields whenever a scene has dialogue; never " +
+            "leave the $langName field empty while the translation is filled; " +
             "action_en = ONE action only — never paste the world description, setting, or a list " +
             "of places into action_en (the app pastes the world itself); " +
             "action_en MUST name its actor explicitly at the start (e.g. 'The Golden Demon spreads " +
@@ -182,9 +201,11 @@ object DirectorPrompts {
             "hair/fur rippling in the wind, fabric responding to movement, weight shifting — " +
             "supporting the primary action, never stealing focus from it; " +
             "FACIAL PERFORMANCE: when a scene has dialogue, the speaker's mouth must be visibly " +
-            "open (shouting or speaking clearly — video models animate speech only when the mouth " +
-            "is clearly open); give the speaker one specific expression (rage, defiance, pain, " +
-            "triumph) and write it into the action; " +
+            "open — write the open mouth INTO the action itself ('mouth wide open shouting...', " +
+            "'lips parted as he shouts...'); an expression alone ('eyes narrowed', 'fierce " +
+            "expression') does NOT count — the mouth must be described as open in the action text. " +
+            "Give the speaker one specific expression (rage, defiance, pain, triumph) and write it " +
+            "into the action; " +
             "narration_id is a voiceover line for the narrator app, NOT dialogue — never put " +
             "dialogue words into narration_id."
     }

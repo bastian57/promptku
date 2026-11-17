@@ -134,8 +134,16 @@ fun V2PromptScreen(v2: V2ViewModel) {
                 }
                 Text("Scene ${scene.sceneNumber}${if (scene.plan.effectId.isNotBlank()) " • efek: ${scene.plan.effectId}" else ""}${if (scene.approved) " • ✓ Disetujui" else ""}")
                 Text(text)
-                if (scene.plan.dialogueId.isNotBlank()) {
-                    Text("Dialog ID: \"${scene.plan.dialogueId}\"")
+                // v2.1 fix5 — dialog yang ditampilkan = bahasa pilihan user
+                // (yang ada di prompt), bukan selalu ID. Narasi tampil sebagai
+                // blok teks sendiri, terpisah dari teks prompt.
+                val bibleLang = v2.bible?.dialogueLang ?: "ID"
+                val dialogueText = if (bibleLang == "EN") scene.plan.dialogueEn else scene.plan.dialogueId
+                if (dialogueText.isNotBlank()) {
+                    Text("Dialog ($bibleLang): \"$dialogueText\"")
+                }
+                if (scene.plan.narrationId.isNotBlank()) {
+                    Text("Narasi SuaraKu: \"${scene.plan.narrationId}\"")
                 }
                 if (scene.needsReview) {
                     Text("PERLU CEK MANUAL: ${scene.reviewReason}")

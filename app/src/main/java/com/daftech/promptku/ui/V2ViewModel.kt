@@ -721,7 +721,10 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         .flatMap { it.failures }.joinToString("; ")
                     rendered = rendered.map { scene ->
                         if (scene.sceneNumber in stillFailing) {
-                            scene.copy(needsReview = true, reviewReason = reasons.take(300))
+                            // v2.1 fix5 — batas 300 memotong daftar alasan G4
+                            // di tengah kata ("bertabrakan den", audit Storm
+                            // Titans): naikkan ke 1000 supaya daftar lengkap.
+                            scene.copy(needsReview = true, reviewReason = reasons.take(1000))
                         } else scene
                     }
                     gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
@@ -970,7 +973,9 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
      *  v2.1 inovasi #2 — default HANYA engine yang aktif di layar Prompt
      *  (keluhan 21:02: file 72 blok padahal cuma Flow yang dipakai);
      *  [allEngines] = true baru mengeluarkan keempat engine. Narasi SuaraKu
-     *  ikut diexport (per scene + blok lengkap di akhir). */
+     *  ikut diexport HANYA di blok NARASI LENGKAP di akhir (v2.1 fix5 —
+     *  terpisah dari blok prompt, bukan menempel per scene). Dialog yang
+     *  ditampilkan HANYA bahasa pilihan user (yang ada di prompt). */
     fun exportPrompts(context: Context, engine: TargetEngine, allEngines: Boolean): Boolean {
         val current = bible ?: return false
         val mode = if (images.isNotEmpty()) "Mode B (referensi)" else "Mode A (teks-saja)"
@@ -1012,14 +1017,23 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 sb.appendLine("Scene ${scene.sceneNumber} — ${engineLabel(eng)}:")
                 sb.appendLine(text)
                 if (eng == engines.first()) {
-                    if (scene.plan.dialogueId.isNotBlank()) {
-                        sb.appendLine("Dialog ID: \"${scene.plan.dialogueId}\"")
-                    }
-                    if (scene.plan.dialogueEn.isNotBlank()) {
-                        sb.appendLine("Dialog EN: \"${scene.plan.dialogueEn}\"")
-                    }
-                    if (scene.plan.narrationId.isNotBlank()) {
-                        sb.appendLine("Narasi SuaraKu: \"${scene.plan.narrationId}\"")
+                    // v2.1 fix5 — dialog di export HANYA bahasa pilihan user
+                    // (yang memang ada di prompt); bahasa lain dibuang. Kalau
+                    // field pilihan kosong tapi terjemahannya ada (scene gagal
+                    // gerbang G5), tampilkan terjemahan dengan penanda supaya
+                    // ketidaksesuaian kelihatan, bukan diam-diam.
+                    // Narasi TIDAK lagi menempel per scene di blok prompt —
+                    // narasi hidup di blok NARASI LENGKAP di akhir file saja.
+                    val isEn = current.dialogueLang == "EN"
+                    val dialogueText = if (isEn) scene.plan.dialogueEn else scene.plan.dialogueId
+                    if (dialogueText.isNotBlank()) {
+                        sb.appendLine("Dialog (${current.dialogueLang}): \"$dialogueText\"")
+                    } else {
+                        val fallbackText = if (isEn) scene.plan.dialogueId else scene.plan.dialogueEn
+                        if (fallbackText.isNotBlank()) {
+                            val fallbackLang = if (isEn) "ID" else "EN"
+                            sb.appendLine("Dialog ($fallbackLang, bukan bahasa pilihan): \"$fallbackText\"")
+                        }
                     }
                     if (scene.approved) {
                         sb.appendLine("Disetujui.")

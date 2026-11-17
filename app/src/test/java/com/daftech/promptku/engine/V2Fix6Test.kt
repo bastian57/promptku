@@ -61,8 +61,12 @@ class V2Fix6Test {
         val bible = friezaBible()
         val rendered = ModeRender.renderScene(bible, plan(1, "descends slowly"), V2Mode.REFERENCE)
         assertFalse(rendered.flowText, rendered.flowText.contains(".."))
-        assertTrue(rendered.flowText.contains("In a sprawling ruined metropolis"))
-        assertTrue(rendered.flowText.contains("lit with cold moonlight."))
+        // v2.1 fix5 — template "In $world," + "lit with $light" DICABUT:
+        // dunia/cahaya kini kalimat, jadi "Setting: ..."/"Lighting: ...".
+        assertTrue(rendered.flowText.contains("Setting: a sprawling ruined metropolis"))
+        assertTrue(rendered.flowText.contains("Lighting: cold moonlight."))
+        assertFalse(rendered.flowText, rendered.flowText.contains("In a sprawling"))
+        assertFalse(rendered.flowText, rendered.flowText.contains("lit with cold"))
     }
 
     @Test

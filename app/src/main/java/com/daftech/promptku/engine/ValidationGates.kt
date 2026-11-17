@@ -19,6 +19,23 @@ object ValidationGates {
         "fight", "fights", "battle", "battles", "smash", "smashes"
     )
 
+    // v2.1 fix5 — kata fungsi Inggris yang TIDAK deskriptif: token-token ini
+    // lolos filter "panjang >= 4" G4 dan bikin false positive ("orange, with"
+    // di Storm Titans S17 — "with" dari anchor "orange gi with blue sash"
+    // dihitung sebagai token deskriptif). Hanya kata fungsi murni; kata
+    // deskriptif ("long", "dark", "golden") TIDAK masuk daftar ini.
+    private val STOPWORDS = setOf(
+        "with", "from", "that", "this", "then", "when", "over", "into",
+        "onto", "your", "their", "them", "than", "about", "after", "before",
+        "between", "through", "during", "under", "above", "below", "across",
+        "behind", "beside", "while", "which", "where", "there", "here",
+        "have", "been", "being", "will", "would", "could", "should", "very",
+        "much", "more", "most", "some", "such", "only", "also", "even",
+        "still", "each", "both", "same", "other", "another", "upon",
+        "among", "around", "toward", "towards", "against", "within",
+        "without", "along"
+    )
+
     /** Tanda tangan dunia: 5 kata pertama deskripsi dunia (lowercase). */
     fun worldSignature(worldDescEn: String): String =
         worldDescEn.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }.take(5).joinToString(" ")
@@ -149,7 +166,7 @@ object ValidationGates {
                     // SAJA — "golden" di cahaya akan false positive kalau
                     // dicek di seluruh teks.
                     val anchorTokens = anchor.lowercase().split(Regex("[^a-z0-9]+"))
-                        .filter { it.length >= 4 }.toSet()
+                        .filter { it.length >= 4 && it !in STOPWORDS }.toSet()
                     if (anchorTokens.size >= 2) {
                         val actTokens = tokensOf(scene.plan.actionEn)
                         val shared = anchorTokens intersect actTokens
@@ -175,9 +192,18 @@ object ValidationGates {
         val g5Failures = scenes.mapNotNull { scene ->
             val idWords = wordCount(scene.plan.dialogueId)
             val enWords = wordCount(scene.plan.dialogueEn)
+            // v2.1 fix5 — dialog WAJIB bahasa pilihan user (bible.dialogueLang).
+            // Akar keluhan lapangan: prompter tidak pernah diberi tahu pilihan
+            // ini, jadi field bahasa pilihan bisa kosong sementara terjemahannya
+            // terisi — render lalu jatuh ke fallback diam-diam. Sekarang itu
+            // gagal gerbang dan masuk retryReasons, bukan lolos diam-diam.
+            val hasDialogue = scene.plan.dialogueId.isNotBlank() || scene.plan.dialogueEn.isNotBlank()
+            val chosenBlank = if (bible.dialogueLang == "EN") scene.plan.dialogueEn.isBlank()
+                else scene.plan.dialogueId.isBlank()
             when {
                 idWords > 8 -> "Scene ${scene.sceneNumber}: dialog ID $idWords kata (maks 8)"
                 enWords > 8 -> "Scene ${scene.sceneNumber}: dialog EN $enWords kata (maks 8)"
+                hasDialogue && chosenBlank -> "Scene ${scene.sceneNumber}: dialog ada tapi bukan bahasa pilihan (${bible.dialogueLang})"
                 scene.plan.narrationId.isBlank() && requireNarration -> "Scene ${scene.sceneNumber}: narasi kosong (wajib terisi)"
                 else -> null
             }
