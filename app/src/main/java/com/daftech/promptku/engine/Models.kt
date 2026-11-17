@@ -72,7 +72,17 @@ enum class CameraMove(val labelId: String, val phraseEn: String) {
     PAN_LEFT("Pan Kiri", "slow pan left"),
     PAN_RIGHT("Pan Kanan", "slow pan right"),
     TILT_UP("Tilt Up", "slow tilt up"),
-    ZOOM_IN("Zoom In (pelan)", "slow zoom in")
+    ZOOM_IN("Zoom In (pelan)", "slow zoom in"),
+    // v2.1 fix8 v2 — gerakan CEPAT untuk beat berantem (grammar referensi:
+    // cepat = default, slow-mo cuma di impact). Sebelum fix8, pool kamera
+    // didominasi "slow ..." dan efek fight mengunci kamera slow (right
+    // cross -> slow dolly in) — itu yang bikin 5 scene berantem Olympus
+    // berasa 5x slow motion. WHIP_PAN = sapuan cepat (bukan "slow pan");
+    // PUSH_IN = zoom/dorong cepat ke close-up wajah (khusus IMPACT);
+    // HANDHELD_SHAKE = goyang mengejar aksi (bukan "subtle sway").
+    WHIP_PAN("Whip Pan (cepat)", "whip pan, fast motion blur, snapping across the action"),
+    PUSH_IN("Push-In Cepat", "fast push-in to close-up on the face"),
+    HANDHELD_SHAKE("Handheld Goyang", "handheld camera, urgent shake, chasing the action")
 }
 
 enum class LightKind(val labelId: String, val phraseEn: String) {
@@ -288,7 +298,12 @@ data class ShotInput(
     // PromptEngine selesai. Anggaran kata/karakter efektif = cap engine
     // DIKURANGI field ini (0 = jalur v1 wizard, tanpa klausa aspek).
     val aspectWords: Int = 0,
-    val aspectChars: Int = 0
+    val aspectChars: Int = 0,
+    // v2.1 fix8 v2 — rantai kamera: true = gerakan kamera scene ini
+    // MELANJUTKAN gerakan kamera scene sebelumnya (satu aliran, bukan
+    // potongan baru). PromptEngine menulis "continuing <gerakan> from the
+    // previous shot" — inilah yang bikin 5 scene berantem berasa 1 take.
+    val cameraContinues: Boolean = false
 )
 
 data class GeneratedPrompt(

@@ -825,11 +825,17 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 val allPlans = scenes.map { it.plan }
                     .map { if (it.sceneNumber == sceneNumber) posedFresh.copy(effectId = "") else it }
-                val assigned = ModeRender.assignEffects(
-                    allPlans, isFight, current.beats.size.coerceAtLeast(1)
-                )
-                val newPlan = assigned.firstOrNull { it.sceneNumber == sceneNumber } ?: posedFresh
-                val rendered = ModeRender.renderScene(current, newPlan, mode, images.size)
+                // v2.1 fix8 — regenerasi 1 scene harus lewat renderAll
+                // (bukan renderScene tunggal): peran fight + rantai kamera
+                // dihitung dari SELURUH film — render tunggal akan memberi
+                // scene ini efek siklus generik, bukan efek perannya
+                // (IMPACT/HERO_HURT/TENSION), dan kameranya tidak nyambung
+                // dengan tetangganya. Scene lain tidak ikut berubah: efek
+                // mereka sudah terpasang (assignEffects hanya mengisi yang
+                // kosong) dan pose mereka dipertahankan fillPosesFromCycle.
+                val renderedAll = ModeRender.renderAll(current, allPlans, mode, isFight, images.size)
+                val rendered = (renderedAll.firstOrNull { it.sceneNumber == sceneNumber }
+                    ?: ModeRender.renderScene(current, posedFresh, mode, images.size))
                     .copy(approved = false)
                 scenes = scenes.map { if (it.sceneNumber == sceneNumber) rendered else it }
                 gates = ValidationGates.runGates(current, scenes, images.isNotEmpty())

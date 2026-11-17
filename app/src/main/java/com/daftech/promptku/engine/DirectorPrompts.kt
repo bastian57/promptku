@@ -128,7 +128,8 @@ object DirectorPrompts {
         bible: StoryBible,
         beat: BeatRange,
         beatMap: List<BeatRange>,
-        ledger: ArcLedger
+        ledger: ArcLedger,
+        fightRoles: Map<Int, FightRole> = emptyMap()
     ): String {
         val total = beatMap.last().lastScene
         val role = BeatMap.roleOf(beat.beatIndex, bible.beats)
@@ -193,7 +194,37 @@ object DirectorPrompts {
         } else {
             "This is the last beat — end the film here."
         }
-        return "$head\n$body\n$state\n$nextLine"
+        val fightSection = fightPacingText(bible, beat, fightRoles)
+        val middle = if (fightSection.isBlank()) "" else "\n$fightSection"
+        return "$head\n$body$middle\n$state\n$nextLine"
+    }
+
+    /** Peran fight scene di beat ini (fix8 v2) — ditempel di blok beat
+     *  supaya LLM tahu scene mana EXCHANGE / TENSION / IMPACT /
+     *  HERO_HURT / FINISHER. Kosong = beat tanpa peran fight (film
+     *  non-ACTION atau Penutup). */
+    private fun fightPacingText(
+        bible: StoryBible,
+        beat: BeatRange,
+        fightRoles: Map<Int, FightRole>
+    ): String {
+        val inBeat = (beat.firstScene..beat.lastScene)
+            .mapNotNull { s -> fightRoles[s]?.let { s to it } }
+        if (inBeat.isEmpty()) return ""
+        val hero = bible.hero?.name.orEmpty().ifBlank { "the hero" }
+        val villain = bible.antagonistName.ifBlank { "the antagonist" }
+        val lines = inBeat.joinToString(" ") { (scene, role) ->
+            when (role) {
+                FightRole.EXCHANGE -> "Scene $scene = EXCHANGE: rapid flurry — 2–3 fast moves in one continuous flow, no pause, no slow motion."
+                FightRole.TENSION -> "Scene $scene = TENSION: NO contact — circling, staring, breathing, dust settling; the pause that makes the next burst feel faster."
+                FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands the decisive blow on $villain — time ramps into slow motion for a heartbeat, the camera pushes in close on $villain's face, eyes wide with pain, jaw slack, then snaps back to full speed. Write the words \"slow motion\" in action_en HERE. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
+                FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero staggers back, blood on his lip, knees buckling, then his eyes harden and he rises."
+                FightRole.FINISHER -> "Scene $scene = FINISHER: the finishing move lands in slow motion — $villain falls."
+                FightRole.NONE -> ""
+            }
+        }
+        return "FIGHT PACING for this beat: $lines " +
+            "Fight scenes are ONE continuous flow — each scene continues the previous scene's motion and camera; never restart the fight as a new duel."
     }
 
     /** Satu batch scene. [sceneNumbers] = nomor scene yang diminta (1-based).
@@ -221,11 +252,15 @@ object DirectorPrompts {
             "- beat ${b.index} ${b.name}: ${b.summaryEn}"
         }
         val beatMap = BeatMap.build(bible.totalScenes, bible.beats)
+        // v2.1 fix8 v2 — peran fight per scene (EXCHANGE/TENSION/IMPACT/
+        // HERO_HURT/FINISHER), dihitung dari BeatMap yang sama dengan
+        // assignEffects + gerbang R9 — satu sumber kebenaran peran.
+        val fightRoles = BeatMap.fightRoles(beatMap, bible.beats, BeatMap.isFightFilm(bible))
         val beatsInBatch = sceneNumbers
             .map { BeatMap.beatForScene(it, beatMap) }
             .distinctBy { it.beatIndex }
         val beatBlock = beatsInBatch.joinToString("\n") { beat ->
-            beatBlockText(bible, beat, beatMap, ledger)
+            beatBlockText(bible, beat, beatMap, ledger, fightRoles)
         }
         val retryBlock = if (retryReasons.isEmpty()) "" else
             "RETRY — the following scenes failed validation. Fix EXACTLY these problems, " +
@@ -241,6 +276,15 @@ object DirectorPrompts {
         val langName = if (bible.dialogueLang == "EN") "English" else "Indonesian"
         val langField = if (bible.dialogueLang == "EN") "dialogue_en" else "dialogue_id"
         val otherField = if (bible.dialogueLang == "EN") "dialogue_id" else "dialogue_en"
+        // v2.1 fix8 v2 — aturan pacing global (hanya film fight): cepat =
+        // default, slow-mo cuma di IMPACT + finisher. Peran per scene ada
+        // di blok beat di atas; ini aturan yang berlaku se-film.
+        val fightPacingRule = if (BeatMap.isFightFilm(bible)) {
+            "FIGHT PACING: fast is the DEFAULT for fight scenes — exchanges, movement, camera. " +
+                "Slow motion ONLY in the IMPACT scene and the finisher scene named in the beat block above. " +
+                "NEVER write \"slow motion\", \"time freezes\", or \"freezes for a heartbeat\" in any other scene's action_en. " +
+                "Fight scenes are ONE continuous flow — each scene continues the previous scene's motion and camera; never restart the fight as a new duel. "
+        } else ""
         return "Story bible:\n" +
             "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
             "$heroBlock\n$antagonistBlock\n" +
@@ -255,7 +299,7 @@ object DirectorPrompts {
             "Write scene plans for scene numbers ${sceneNumbers.joinToString(", ")} as a JSON ARRAY " +
             "of objects, one per scene, in order:\n" +
             "[{\"scene_number\": 1, \"action_en\": \"...\", " +
-            "\"camera_move\": \"static|slow dolly-in|slow pan left|slow pan right|tracking shot|crane up|handheld\", " +
+            "\"camera_move\": \"static|slow dolly-in|slow pan left|slow pan right|tracking shot|crane up|handheld|whip pan|fast push-in\", " +
             "\"lens_mm\": 35, \"shot_size\": \"wide|medium|close-up|extreme close-up\", " +
             "\"angle\": \"eye|low|high|bird\", " +
             "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty — PRIMARY when the user chose Indonesian)\", " +
@@ -268,7 +312,8 @@ object DirectorPrompts {
             "Rules: fight moves must be DIFFERENT in every scene of the film (never repeat a " +
             "punch/kick/grapple verbatim); a NAMED special move (Kamehameha, a named attack or " +
             "technique) may appear in AT MOST ONE scene per film — never repeat a signature move " +
-            "in two scenes; the closing scene is aftermath, no big fight; " +
+            "in two scenes; " + fightPacingRule +
+            "the closing scene is aftermath, no big fight; " +
             "the beat block above IS the escalation rule for THIS batch — follow its intensity, " +
             "its forbidden words, and its ledger exactly (do not escalate past the beat you are " +
             "writing, and do not close the story before the closing beat); " +
@@ -278,7 +323,9 @@ object DirectorPrompts {
             "written FIRST in $langName ($langField is the primary line); $otherField is its " +
             "translation of the SAME line. Fill BOTH fields whenever a scene has dialogue; never " +
             "leave the $langName field empty while the translation is filled; " +
-            "action_en = ONE action only — never paste the world description, setting, or a list " +
+            "action_en = ONE action only — for FIGHT scenes, the ONE action is a rapid flurry: " +
+            "2–3 fast moves in one continuous flow, without pause (jab, cross, spinning kick — " +
+            "not three separate beats); never paste the world description, setting, or a list " +
             "of places into action_en (the app pastes the world itself); " +
             "action_en MUST name its actor explicitly at the start (e.g. 'The Golden Demon spreads " +
             "its wings...' or 'Broly hurls a plasma wave...'), never a bare verb phrase ('spreads " +

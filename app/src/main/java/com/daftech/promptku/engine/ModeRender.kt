@@ -143,6 +143,12 @@ object ModeRender {
             ?.let { return it }
         return CameraMove.values().firstOrNull { it.phraseEn.lowercase().startsWith(t.split(" ").first()) }
             ?: when {
+                // v2.1 fix8 v2 — gerakan cepat (nama + frasa dicek nama dulu
+                // di atas; ini fallback untuk teks bebas LLM seperti
+                // "whip pan left to right" / "handheld shake").
+                t.contains("whip") -> CameraMove.WHIP_PAN
+                t.contains("push-in") || t.contains("push in") -> CameraMove.PUSH_IN
+                t.contains("shake") -> CameraMove.HANDHELD_SHAKE
                 t.contains("dolly") && t.contains("out") -> CameraMove.DOLLY_OUT
                 t.contains("dolly") -> CameraMove.DOLLY_IN
                 t.contains("pan left") -> CameraMove.PAN_LEFT
@@ -196,11 +202,18 @@ object ModeRender {
     }
 
     /** Penugasan efek level FILM: jurus tidak pernah berulang se-film,
-     *  finisher 1x di scene pertama klimaks, Penutup = aftermath. */
+     *  finisher 1x di scene pertama klimaks, Penutup = aftermath.
+     *  v2.1 fix8 v2 — [fightRoles]: peran per scene dari BeatMap (sama
+     *  dengan yang diterima prompter + gerbang R9). Peran MENANG atas
+     *  siklus generik: scene IMPACT/HERO_HURT/TENSION mendapat efek
+     *  perannya, bukan jurus acak — kalau tidak, momen impact bisa jatuh
+     *  di scene mana pun dan slow-mo massal kembali. Kosong = perilaku
+     *  lama (penelepon lama / film non-fight tetap jalan). */
     fun assignEffects(
         plans: List<V2ScenePlan>,
         isFight: Boolean,
-        totalBeats: Int
+        totalBeats: Int,
+        fightRoles: Map<Int, FightRole> = emptyMap()
     ): List<V2ScenePlan> {
         if (plans.isEmpty()) return plans
         val totalScenes = plans.size
@@ -215,11 +228,32 @@ object ModeRender {
         val used = plans.mapNotNull { it.effectId.ifBlank { null } }.toMutableSet()
         var fightIdx = 0
         var camIdx = 0
+        var tensionIdx = 0
         return plans.map { plan ->
             var effectId = plan.effectId
             if (effectId.isBlank()) {
                 when {
                     plan.sceneNumber == lastScene -> effectId = ""
+                    fightRoles[plan.sceneNumber] == FightRole.IMPACT -> {
+                        effectId = "fight_impact"
+                        used.add(effectId)
+                    }
+                    fightRoles[plan.sceneNumber] == FightRole.HERO_HURT -> {
+                        effectId = "fight_hero_hurt"
+                        used.add(effectId)
+                    }
+                    fightRoles[plan.sceneNumber] == FightRole.TENSION -> {
+                        val pool = EffectLibrary.TENSION_MOVES
+                        if (pool.isNotEmpty()) {
+                            effectId = pool[tensionIdx % pool.size].id
+                            tensionIdx++
+                            used.add(effectId)
+                        }
+                    }
+                    fightRoles[plan.sceneNumber] == FightRole.FINISHER -> {
+                        effectId = "finisher"
+                        used.add("finisher")
+                    }
                     isFight && plan.sceneNumber == climaxFirstScene -> {
                         effectId = "finisher"
                         used.add("finisher")
@@ -263,17 +297,24 @@ object ModeRender {
             .replace("The giant", target)
     }
 
-    fun effectiveShot(plan: V2ScenePlan): EffectiveShot {
+    fun effectiveShot(plan: V2ScenePlan, cameraOverride: CameraMove? = null): EffectiveShot {
         val effect = EffectLibrary.ALL.firstOrNull { it.id == plan.effectId }
         return EffectiveShot(
-            cameraMove = effect?.cameraMove ?: cameraMoveFromString(plan.cameraMove),
+            // v2.1 fix8 v2 — cameraOverride (rantai kamera) menang atas
+            // kamera efek maupun kamera rencana LLM.
+            cameraMove = cameraOverride ?: effect?.cameraMove ?: cameraMoveFromString(plan.cameraMove),
             lensMm = effect?.lensMm ?: plan.lensMm.coerceIn(14, 200),
             angle = effect?.angle ?: angleFromString(plan.angle),
             shotSize = shotSizeFromString(plan.shotSize)
         )
     }
 
-    private fun shotInputFor(bible: StoryBible, plan: V2ScenePlan, shot: EffectiveShot): ShotInput {
+    private fun shotInputFor(
+        bible: StoryBible,
+        plan: V2ScenePlan,
+        shot: EffectiveShot,
+        cameraContinues: Boolean = false
+    ): ShotInput {
         val hero = bible.hero
         val card = if (hero == null) null else CharacterCard(
             trait = hero.anchorsEn.getOrNull(0).orEmpty(),
@@ -307,6 +348,7 @@ object ModeRender {
             angle = shot.angle,
             lensMm = shot.lensMm,
             cameraMove = shot.cameraMove,
+            cameraContinues = cameraContinues,
             light = lightKindFrom(bible.lightEn),
             actionEn = action,
             // Draft Offline v2 — pose dari rencana (rantai v1); kosong =
@@ -339,7 +381,14 @@ object ModeRender {
      *  bukan tempelan ", X" + " and, X" (itu sumber "Frieza, Frieza" 54x dan
      *  "and, Frieza" 36x); antagonis == hero di-drop; klaim "Image 2" hanya
      *  kalau gambar ke-2 memang ada ([imageCount] >= 2). */
-    fun renderReference(bible: StoryBible, plan: V2ScenePlan, shot: EffectiveShot, engine: TargetEngine, imageCount: Int = 1): String {
+    fun renderReference(
+        bible: StoryBible,
+        plan: V2ScenePlan,
+        shot: EffectiveShot,
+        engine: TargetEngine,
+        imageCount: Int = 1,
+        cameraContinues: Boolean = false
+    ): String {
         val hero = bible.hero
         val heroName = hero?.name ?: "the hero"
         val sameAntagonist = bible.antagonistName.isBlank() ||
@@ -355,7 +404,13 @@ object ModeRender {
         val refList = refNames.joinToString(", ")
         val pointer = "$heroName$antagonistAnd in the reference images"
         val shotPhrase = shot.shotSize.phraseEn
-        val cameraPhrase = shot.cameraMove.phraseEn
+        // v2.1 fix8 v2 — rantai kamera: gerakan yang sama berlanjut dari
+        // shot sebelumnya (bukan potongan baru).
+        val cameraPhrase = if (cameraContinues) {
+            "continuing ${shot.cameraMove.phraseEn} from the previous shot"
+        } else {
+            shot.cameraMove.phraseEn
+        }
         val anglePhrase = shot.angle.phraseEn
         val action = cleanField(sanitizeAction(plan.actionEn, bible))
         val world = cleanField(cleanWorldStart(bible.worldDescEn))
@@ -442,15 +497,19 @@ object ModeRender {
         bible: StoryBible,
         plan: V2ScenePlan,
         mode: V2Mode,
-        imageCount: Int = 1
+        imageCount: Int = 1,
+        // v2.1 fix8 v2 — cameraOverride (rantai kamera dari renderAll):
+        // bukan null = kamera scene ini melanjutkan scene sebelumnya.
+        cameraOverride: CameraMove? = null
     ): V2ScenePrompt {
         // v2.1 fix6 — bersihkan aksi SEBELUM render (berlaku dua mode +
         // rencana lama dari cache ikut bersih saat dibuka ulang).
         val cleanPlan = plan.copy(actionEn = cleanField(sanitizeAction(plan.actionEn, bible)))
-        val shot = effectiveShot(cleanPlan)
+        val shot = effectiveShot(cleanPlan, cameraOverride)
+        val continues = cameraOverride != null
         val aspect = aspectClause(bible.aspectRatio)
         return if (mode == V2Mode.TEXT_ONLY) {
-            val input = shotInputFor(bible, cleanPlan, shot)
+            val input = shotInputFor(bible, cleanPlan, shot, continues)
             val byEngine = PromptEngine.buildAll(input).associateBy { it.engine }
             V2ScenePrompt(
                 sceneNumber = cleanPlan.sceneNumber,
@@ -464,10 +523,10 @@ object ModeRender {
             V2ScenePrompt(
                 sceneNumber = cleanPlan.sceneNumber,
                 plan = cleanPlan,
-                flowText = renderReference(bible, cleanPlan, shot, TargetEngine.FLOW, imageCount),
-                klingText = renderReference(bible, cleanPlan, shot, TargetEngine.KLING, imageCount),
-                seedanceText = renderReference(bible, cleanPlan, shot, TargetEngine.SEEDANCE, imageCount),
-                wanText = renderReference(bible, cleanPlan, shot, TargetEngine.WAN, imageCount)
+                flowText = renderReference(bible, cleanPlan, shot, TargetEngine.FLOW, imageCount, continues),
+                klingText = renderReference(bible, cleanPlan, shot, TargetEngine.KLING, imageCount, continues),
+                seedanceText = renderReference(bible, cleanPlan, shot, TargetEngine.SEEDANCE, imageCount, continues),
+                wanText = renderReference(bible, cleanPlan, shot, TargetEngine.WAN, imageCount, continues)
             )
         }
     }
@@ -480,7 +539,14 @@ object ModeRender {
         imageCount: Int = 1
     ): List<V2ScenePrompt> {
         val totalBeats = bible.beats.size.coerceAtLeast(1)
-        val assigned = assignEffects(plans, isFight, totalBeats)
+        // v2.1 fix8 v2 — peran fight dari BeatMap (satu sumber kebenaran
+        // dengan prompter + gerbang R9). Peran dihitung dari TOTAL scene
+        // film (bible.totalScenes), BUKAN plans.size — retry hanya me-render
+        // subset scene gagal, dan peran subset harus sama dengan peran film
+        // penuh (scene 10 tetap IMPACT walau retry cuma 3 scene).
+        val beatMap = BeatMap.build(bible.totalScenes, bible.beats)
+        val roles = BeatMap.fightRoles(beatMap, bible.beats, isFight)
+        val assigned = assignEffects(plans, isFight, totalBeats, roles)
         // v2.1 fix6 (riset) — Mode A cloud tidak punya pose (prompter JSON
         // tak ada field pose) -> "Ends as standing firm." 18x (Bima). Isi
         // dari siklus di sini, SETELAH assignEffects, SEBELUM renderScene:
@@ -488,7 +554,42 @@ object ModeRender {
         // dengan seed = hash judul (deterministik per film). Rencana yang
         // sudah punya pose (Draft Offline) TIDAK disentuh.
         val posed = fillPosesFromCycle(bible, assigned)
-        return posed.map { renderScene(bible, it, mode, imageCount) }
+        val chained = chainCameras(posed, roles)
+        return posed.map { plan ->
+            val (override, _) = chained[plan.sceneNumber] ?: (null to false)
+            renderScene(bible, plan, mode, imageCount, override)
+        }
+    }
+
+    /** Rantai kamera fix8 v2 — jawaban "5 scene jadi 1 scene": dua scene
+     *  EXCHANGE berurutan memakai gerakan kamera YANG SAMA, dan prompt
+     *  menulis "continuing <gerakan> from the previous shot" — potongan
+     *  antar-klip jadi tidak kerasa. Rantai PUTUS di scene bukan-EXCHANGE
+     *  (TENSION/IMPACT/HERO_HURT/FINISHER memulai gerakan baru) dan di
+     *  film non-fight (roles kosong = tidak ada override).
+     *  Mengembalikan peta sceneNumber -> (cameraOverride, continues).
+     *  Deterministik per sceneNumber (seperti fillPosesFromCycle) supaya
+     *  render ulang konsisten. */
+    fun chainCameras(
+        plans: List<V2ScenePlan>,
+        fightRoles: Map<Int, FightRole>
+    ): Map<Int, Pair<CameraMove?, Boolean>> {
+        if (fightRoles.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Int, Pair<CameraMove?, Boolean>>()
+        var prevRole: FightRole? = null
+        var prevCamera: CameraMove? = null
+        for (plan in plans.sortedBy { it.sceneNumber }) {
+            val role = fightRoles[plan.sceneNumber]
+            val own = effectiveShot(plan).cameraMove
+            if (role == FightRole.EXCHANGE && prevRole == FightRole.EXCHANGE && prevCamera != null) {
+                result[plan.sceneNumber] = prevCamera to true
+            } else {
+                result[plan.sceneNumber] = null to false
+                prevCamera = own
+            }
+            prevRole = role
+        }
+        return result
     }
 
     // v2.1 fix6 (riset) — isi pose kosong dari siklus pose ScriptEngine.

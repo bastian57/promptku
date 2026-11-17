@@ -20,11 +20,15 @@ class EffectLibraryTest {
     }
 
     @Test
-    fun libraryHas28EffectsAcrossFiveCategories() {
-        assertEquals(28, EffectLibrary.ALL.size)
+    fun libraryHas33EffectsAcrossFiveCategories() {
+        // v2.1 fix8 v2 — 33 efek: 28 generik + 5 roleOnly (fight_impact,
+        // fight_hero_hurt, fight_tension_a/b/c) yang TIDAK masuk siklus
+        // generik. Kategori FIGHT 8 -> 13.
+        assertEquals(33, EffectLibrary.ALL.size)
         assertEquals(5, EffectCategory.values().size)
-        assertEquals(28, EffectLibrary.ALL.map { it.id }.toSet().size)
-        assertEquals(8, EffectLibrary.ALL.count { it.category == EffectCategory.FIGHT })
+        assertEquals(33, EffectLibrary.ALL.map { it.id }.toSet().size)
+        assertEquals(13, EffectLibrary.ALL.count { it.category == EffectCategory.FIGHT })
+        assertEquals(5, EffectLibrary.ALL.count { it.roleOnly })
         assertEquals(4, EffectLibrary.ALL.count { it.category == EffectCategory.EXPLOSION })
         assertEquals(6, EffectLibrary.ALL.count { it.category == EffectCategory.EMOTION })
         assertEquals(6, EffectLibrary.ALL.count { it.category == EffectCategory.CAMERA })

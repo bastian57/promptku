@@ -32,7 +32,11 @@ data class Effect(
     val lightKind: LightKind? = null,
     val angle: CameraAngle? = null,
     // sequenceIndex yang boleh memakai efek ini (0..7 EIGHT, 0..4 FIVE).
-    val beats: IntRange
+    val beats: IntRange,
+    // v2.1 fix8 v2 — efek PERAN (IMPACT/HERO_HURT/TENSION): hanya boleh
+    // dipasang assignEffects dari FightRole, TIDAK pernah masuk siklus
+    // jurus generik (FIGHT_MOVES) atau dipilih trigger acak.
+    val roleOnly: Boolean = false
 )
 
 // Hasil deteksi trigger dari 1 kalimat (StoryInfer).
@@ -54,13 +58,21 @@ object EffectLibrary {
 
     val ALL: List<Effect> = listOf(
         // ---- GERAKAN BERANTEM (8 jurus) ----
+        // v2.1 fix8 v2 — fragmen fight ditulis ulang CEPAT: bahasa
+        // freeze/slow-mo ("the impact freezes for a heartbeat", "sweat
+        // sprays in slow motion") DICABUT dari semua jurus biasa — kata
+        // itu yang bikin 5 scene berantem Olympus berasa 5x slow motion
+        // (audit lapangan 17 Nov). Slow-mo kini HANYA di fight_impact
+        // (1x/film) + finisher. Kamera fight juga diganti cepat (WHIP_PAN /
+        // TRACKING / HANDHELD_SHAKE); DOLLY_IN slow cuma tersisa di
+        // tension (di sanalah kamera pelan memang benar).
         Effect(
             id = "punch_straight",
             category = EffectCategory.FIGHT,
             nameId = "Pukulan Lurus",
             triggers = listOf("pukul", "tinju", "melawan", "berantem"),
-            fragmentEn = "snaps a straight right cross — the impact freezes for a heartbeat, a shockwave ring bursts from the fist, sweat sprays in slow motion",
-            cameraMove = CameraMove.DOLLY_IN,
+            fragmentEn = "the cross snaps the head back, sweat spraying, the guard splitting open",
+            cameraMove = CameraMove.WHIP_PAN,
             lensMm = 50,
             beats = 2..6
         ),
@@ -69,8 +81,8 @@ object EffectLibrary {
             category = EffectCategory.FIGHT,
             nameId = "Uppercut",
             triggers = listOf("uppercut", "pukul", "tinju"),
-            fragmentEn = "drives an uppercut upward — the jaw snaps back, the body lifts off the ground, dust explodes from the feet",
-            cameraMove = CameraMove.DOLLY_IN,
+            fragmentEn = "the uppercut lifts the jaw, the body rocking back, feet skidding across the ground",
+            cameraMove = CameraMove.TRACKING,
             lensMm = 24,
             beats = 2..6
         ),
@@ -79,8 +91,8 @@ object EffectLibrary {
             category = EffectCategory.FIGHT,
             nameId = "Tendangan Putar",
             triggers = listOf("tendang", "tendangan"),
-            fragmentEn = "spins into a roundhouse kick — the leg blurs, the impact ripples through the torso, the opponent skids across the wet ground",
-            cameraMove = CameraMove.ORBIT,
+            fragmentEn = "the roundhouse kick whips around, the leg a blur, the torso twisting with the impact, dust bursting from the ground",
+            cameraMove = CameraMove.WHIP_PAN,
             lensMm = 35,
             beats = 2..6
         ),
@@ -90,7 +102,7 @@ object EffectLibrary {
             nameId = "Hindaran",
             triggers = listOf("hindar", "menghindar", "ducks"),
             fragmentEn = "ducks under the swinging arm by inches — the fist whistles past the camera, hair and cloth whip in the wind",
-            cameraMove = CameraMove.PAN_RIGHT,
+            cameraMove = CameraMove.TRACKING,
             lensMm = 35,
             beats = 2..6
         ),
@@ -100,7 +112,7 @@ object EffectLibrary {
             nameId = "Blok",
             triggers = listOf("blok", "tahan", "bertahan"),
             fragmentEn = "raises both forearms — the blow lands with a dull thud, the ground cracks under his boots, he does not move an inch",
-            cameraMove = CameraMove.STATIC,
+            cameraMove = CameraMove.HANDHELD_SHAKE,
             lensMm = 50,
             beats = 2..6
         ),
@@ -109,8 +121,10 @@ object EffectLibrary {
             category = EffectCategory.FIGHT,
             nameId = "Bantingan",
             triggers = listOf("banting", "slam", "lempar"),
-            fragmentEn = "lifts the giant over his shoulder — the body slams down, the asphalt shatters in a radial crack, dust blooms outward",
-            cameraMove = CameraMove.CRANE_DOWN,
+            // "asphalt" -> "ground" (drive-by dari audit Olympus: aspal di
+            // reruntuhan Yunani kuno; fragmen ini ditulis ulang di fix8).
+            fragmentEn = "lifts the giant over his shoulder — the body slams down, the ground shatters in a radial crack, dust blooms outward",
+            cameraMove = CameraMove.TRACKING,
             lensMm = 24,
             beats = 3..6
         ),
@@ -119,7 +133,7 @@ object EffectLibrary {
             category = EffectCategory.FIGHT,
             nameId = "Cengkeraman",
             triggers = listOf("cengkeram", "pegang", "cekik"),
-            fragmentEn = "grabs the giant's wrist — veins bulge, the arm trembles, the giant's fingers slowly open",
+            fragmentEn = "grabs the giant's wrist — veins bulge, the arm trembles, the fingers prying open under the strain",
             cameraMove = CameraMove.RACK_FOCUS,
             lensMm = 85,
             beats = 2..6
@@ -129,10 +143,73 @@ object EffectLibrary {
             category = EffectCategory.FIGHT,
             nameId = "Finisher",
             triggers = listOf("finisher", "pamungkas", "terakhir"),
+            // Finisher BOLEH slow-mo (satu-satunya jurus biasa yang boleh,
+            // bersama fight_impact): ini momen puncak, bukan tukaran cepat.
             fragmentEn = "rises into the air, fist glowing — the final blow lands, a ring of light expands, the giant collapses in slow motion",
             cameraMove = CameraMove.CRANE_UP,
             lensMm = 24,
             beats = 3..6
+        ),
+        // ---- PERAN FIGHT fix8 v2 (roleOnly — hanya dari FightRole) ----
+        // IMPACT = satu momen slow-mo per film (grammar referensi: pukulan
+        // mendarat -> waktu melambat -> push-in close-up wajah korban
+        // kesakitan -> ngebut lagi). HERO_HURT = villain mendarat pukulan
+        // bersih di Eskalasi. TENSION = jeda tanpa kontak (napas di antara
+        // rentetan). Ketiganya TIDAK masuk siklus FIGHT_MOVES.
+        Effect(
+            id = "fight_impact",
+            category = EffectCategory.FIGHT,
+            nameId = "Pukulan Dampak",
+            triggers = emptyList(),
+            fragmentEn = "the blow lands — the motion ramps into slow motion for a heartbeat, the camera pushing in close on his face, eyes wide with pain, jaw slack, then snaps back to full speed as he crashes backward, dust bursting from the ground",
+            cameraMove = CameraMove.PUSH_IN,
+            lensMm = 85,
+            beats = 2..6,
+            roleOnly = true
+        ),
+        Effect(
+            id = "fight_hero_hurt",
+            category = EffectCategory.FIGHT,
+            nameId = "Hero Terluka",
+            triggers = emptyList(),
+            fragmentEn = "staggers back, blood on his lip, knees buckling, the world tilting — then his eyes harden and he plants his feet again",
+            cameraMove = CameraMove.HANDHELD_SHAKE,
+            lensMm = 50,
+            beats = 2..6,
+            roleOnly = true
+        ),
+        Effect(
+            id = "fight_tension_a",
+            category = EffectCategory.FIGHT,
+            nameId = "Ketegangan: Mengelilingi",
+            triggers = emptyList(),
+            fragmentEn = "circles slowly, eyes locked, dust settling between them, both breathing hard, neither blinking",
+            cameraMove = CameraMove.DOLLY_IN,
+            lensMm = 85,
+            beats = 2..6,
+            roleOnly = true
+        ),
+        Effect(
+            id = "fight_tension_b",
+            category = EffectCategory.FIGHT,
+            nameId = "Ketegangan: Menahan Napas",
+            triggers = emptyList(),
+            fragmentEn = "holds his ground, chest heaving, eyes never leaving his opponent, dust drifting through the still air",
+            cameraMove = CameraMove.STATIC,
+            lensMm = 50,
+            beats = 2..6,
+            roleOnly = true
+        ),
+        Effect(
+            id = "fight_tension_c",
+            category = EffectCategory.FIGHT,
+            nameId = "Ketegangan: Menimbang Lawan",
+            triggers = emptyList(),
+            fragmentEn = "weighs his opponent, shifting his weight from foot to foot, the silence stretching between them, a bead of sweat tracing his temple",
+            cameraMove = CameraMove.ORBIT,
+            lensMm = 35,
+            beats = 2..6,
+            roleOnly = true
         ),
         // ---- LEDAKAN (4 efek) ----
         Effect(
@@ -250,7 +327,9 @@ object EffectLibrary {
             nameId = "Whip-Pan",
             triggers = emptyList(),
             fragmentEn = "",
-            cameraMove = CameraMove.PAN_LEFT,
+            // v2.1 fix8 v2 — dulu PAN_LEFT ("slow pan left") padahal
+            // namanya Whip-Pan: whip pan yang lambat itu bukan whip pan.
+            cameraMove = CameraMove.WHIP_PAN,
             lensMm = 35,
             beats = 0..7
         ),
@@ -353,11 +432,21 @@ object EffectLibrary {
     // Jurus berantem tanpa finisher (siklus beat biasa) vs semua jurus
     // (siklus beat non-klimaks) — lihat effectIdForScene soal invarian
     // "tidak ada aksi berulang dalam satu beat".
+    // v2.1 fix8 v2 — efek PERAN (roleOnly) TIDAK masuk siklus: IMPACT /
+    // HERO_HURT / TENSION hanya dipasang assignEffects dari FightRole.
+    // Tanpa filter ini, fight_impact (yang mengandung "slow motion")
+    // bisa tersiklus ke scene EXCHANGE mana pun — slow-mo massal lagi.
     val FIGHT_MOVES: List<Effect> = ALL.filter {
-        it.category == EffectCategory.FIGHT && it.id != "finisher"
+        it.category == EffectCategory.FIGHT && it.id != "finisher" && !it.roleOnly
     }
     val FIGHT_MOVES_ALL: List<Effect> = ALL.filter {
-        it.category == EffectCategory.FIGHT
+        it.category == EffectCategory.FIGHT && !it.roleOnly
+    }
+
+    /** Efek ketegangan (TENSION): disiklus assignEffects antar scene
+     *  TENSION supaya tidak ada satu fragmen yang berulang 3x se-film. */
+    val TENSION_MOVES: List<Effect> = ALL.filter {
+        it.id == "fight_tension_a" || it.id == "fight_tension_b" || it.id == "fight_tension_c"
     }
 
     // Trigger kalimat -> kategori efek. "runtuh" SENGAJA tidak memicu

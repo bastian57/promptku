@@ -31,12 +31,22 @@ enum class BeatRole {
     OPENING, EARLY, LATE, CLIMAX, FALLING, CLOSING
 }
 
+/** Peran satu scene di dalam pertarungan (fix8 v2) — NONE = bukan scene
+ *  fight (Penutup / film non-ACTION). Peran dihitung kode dari BeatMap:
+ *  prompter, assignEffects, dan gerbang R9 memakai peta yang SAMA. */
+enum class FightRole {
+    NONE, EXCHANGE, TENSION, IMPACT, HERO_HURT, FINISHER
+}
+
 /** State alur yang sudah terpakai — dihitung kode dari plan batch
  *  sebelumnya, ditempel ke prompt batch berikutnya (ledger). */
 data class ArcLedger(
     val bigAttacks: List<Pair<Int, String>> = emptyList(),
     val villainEntranceScene: Int? = null,
-    val victoriesClaimed: List<Int> = emptyList()
+    val victoriesClaimed: List<Int> = emptyList(),
+    // v2.1 fix8 v2 — momen impact + hero terluka (peran fight).
+    val impactScenes: List<Int> = emptyList(),
+    val heroHurtScenes: List<Int> = emptyList()
 ) {
     companion object {
         val EMPTY = ArcLedger()
@@ -57,7 +67,17 @@ data class ArcLedger(
                 ArcLexicon.findResolution(plan.actionEn).isNotEmpty() ||
                     ArcLexicon.findResolution(plan.narrationId).isNotEmpty()
             }.map { it.sceneNumber }
-            return ArcLedger(bigAttacks = big, villainEntranceScene = entrance, victoriesClaimed = victories)
+            val impacts = plans.filter {
+                ArcLexicon.isImpactMoment(it.actionEn)
+            }.map { it.sceneNumber }
+            val hurts = plans.filter {
+                ArcLexicon.isHeroHurt(it.actionEn, bible.hero?.name.orEmpty())
+            }.map { it.sceneNumber }
+            return ArcLedger(
+                bigAttacks = big, villainEntranceScene = entrance,
+                victoriesClaimed = victories, impactScenes = impacts,
+                heroHurtScenes = hurts
+            )
         }
     }
 
@@ -68,7 +88,11 @@ data class ArcLedger(
         val entrance = villainEntranceScene?.let { "used (scene $it)" } ?: "not yet used"
         val victories = if (victoriesClaimed.isEmpty()) "none"
         else victoriesClaimed.joinToString(", ") { "scene $it" }
-        return "big attacks: $big. Villain entrance: $entrance. Victories claimed: $victories."
+        val impact = if (impactScenes.isEmpty()) "not yet used"
+        else impactScenes.joinToString(", ") { "scene $it" }
+        val hurt = if (heroHurtScenes.isEmpty()) "not yet used"
+        else heroHurtScenes.joinToString(", ") { "scene $it" }
+        return "big attacks: $big. Villain entrance: $entrance. Victories claimed: $victories. Impact moment: $impact. Hero hurt: $hurt."
     }
 }
 
@@ -175,6 +199,70 @@ object ArcLexicon {
         "grapples", "smash", "smashes", "hit", "hits", "fight", "fights",
         "battle", "battles"
     )
+
+    // --- Slow-mo (fix8 v2): HANYA di scene IMPACT + finisher ---
+    // Frasa yang menandai momen melambat. "freezes" saja TIDAK masuk
+    // ("he freezes in fear" = ketegangan, bukan slow-mo); "slowly" juga
+    // tidak ("circles slowly" = gerak pelan, bukan waktu melambat).
+    // "slow-motion" tidak perlu didaftar: findPhrases menormalisasi tanda
+    // baca jadi spasi, jadi "slow-motion" sudah kena "slow motion".
+    val SLOW_MO_PHRASES = listOf(
+        "slow motion", "time freezes", "time slows", "everything slows",
+        "motion slows", "world slows", "freezes for a heartbeat"
+    )
+
+    /** Apakah teks mengandung momen slow-mo (frasa di atas). */
+    fun isSlowMoMoment(text: String): Boolean = findSlowMo(text).isNotEmpty()
+
+    /** Frasa slow-mo yang ditemukan di teks (untuk pesan gerbang). */
+    fun findSlowMo(text: String): List<String> {
+        if (text.isBlank()) return emptyList()
+        return findPhrases(text, SLOW_MO_PHRASES)
+    }
+
+    /** Momen impact = momen slow-mo di action_en (prompter menulisnya di
+     *  scene IMPACT; fragmen render menambah ramp-nya). */
+    fun isImpactMoment(text: String): Boolean = isSlowMoMoment(text)
+
+    // --- Hero terluka (fix8 v2): penanda fisik hero kena pukul ---
+    // Dicek per KALIMAT + subjek hero (nama hero harus ada di kalimat
+    // yang sama): "General Kallistos staggers back" BUKAN hero terluka —
+    // itu villain yang kena pukul (IMPACT), bukan HERO_HURT.
+    val HERO_HURT_WORDS = setOf("staggers", "stumbles", "reeling", "buckling")
+    val HERO_HURT_PHRASES = listOf(
+        "blood on", "wipes blood", "spits blood", "knees buckling",
+        "falls to one knee", "drops to one knee", "clutches his", "clutches her",
+        "world tilting"
+    )
+
+    /** Apakah aksi menunjukkan HERO terluka (penanda + nama hero di
+     *  kalimat yang sama). Nama pendek (token terakhir, "Frieza" dari
+     *  "Golden Frieza") juga dikenali — sama seperti isVillainEntrance. */
+    fun isHeroHurt(actionEn: String, heroName: String): Boolean {
+        if (actionEn.isBlank()) return false
+        val nameTokens = tokensOf(heroName)
+        // Deteksi per KLAUSA, bukan per kalimat: klausa harus menyebut
+        // hero (nama lengkap, nama pendek, atau "the hero") DAN
+        // mengandung penanda terluka. Pemisah klausa mencakup " — "
+        // (em-dash) dan ", while " — tanpa itu, "Ariadne lands a heavy
+        // blow — Kallistos staggers back, blood on his lip" terbaca hero
+        // terluka padahal yang sempoyongan villain (ketangkep tes fix8,
+        // 17 Nov 2026). Batas: "X watches as Y staggers" (tanpa koma/dash)
+        // masih bisa lolos — heuristik, kalibrasi lapangan.
+        val clauses = actionEn.split(
+            Regex("(?<=[.!])\\s+|\\s[—–-]\\s|;\\s|,\\s(while|as|then)\\s")
+        )
+        for (clause in clauses) {
+            val tokens = tokensOf(clause)
+            val hasHero = (nameTokens.isNotEmpty() &&
+                (tokens.containsAll(nameTokens) || tokens.contains(nameTokens.last()))) ||
+                clause.lowercase().contains("the hero")
+            if (!hasHero) continue
+            if (tokens.any { it in HERO_HURT_WORDS }) return true
+            if (findPhrases(clause, HERO_HURT_PHRASES).isNotEmpty()) return true
+        }
+        return false
+    }
 
     // --- Kejatuhan antagonis (R8 lunak — belum dipakai gerbang) ---
 
@@ -535,4 +623,57 @@ object BeatMap {
 
     fun beatForScene(scene: Int, map: List<BeatRange>): BeatRange =
         map.firstOrNull { it.contains(scene) } ?: map.last()
+
+    /** Apakah film ini film berantem — SATU sumber kebenaran untuk
+     *  prompter, render, dan gerbang (rumus yang sama dengan isFight di
+     *  V2ViewModel: genre ACTION atau ide terdeteksi fight). */
+    fun isFightFilm(bible: StoryBible): Boolean =
+        bible.genre == Genre.ACTION || EffectLibrary.detect(bible.sourceIdea).fight
+
+    /** Peran fight per scene (fix8 v2). Kanonik 18/5: IMPACT S10 (tengah
+     *  Eskalasi), HERO_HURT S12 (akhir Eskalasi), FINISHER S13 (awal
+     *  Klimaks), TENSION S2/S5/S9 (scene ke-2 tiap beat pra-Klimaks),
+     *  EXCHANGE sisanya, Penutup tanpa peran. Non-fight -> peta kosong.
+     *  Urutan: finisher dulu, lalu IMPACT/HERO_HURT, lalu TENSION,
+     *  lalu EXCHANGE mengisi sisanya (yang sudah terisi tidak ditimpa —
+     *  penting untuk film mungil yang rentang beat-nya bertumpuk). */
+    fun fightRoles(map: List<BeatRange>, beats: List<V2Beat>, isFight: Boolean): Map<Int, FightRole> {
+        if (!isFight || map.isEmpty() || beats.isEmpty()) return emptyMap()
+        val roles = mutableMapOf<Int, FightRole>()
+        val climaxIdx = climaxIndex(beats)
+        val climaxRange = map.firstOrNull { it.beatIndex == climaxIdx } ?: return emptyMap()
+        roles[climaxRange.firstScene] = FightRole.FINISHER
+        // Beat LATE = beat terakhir sebelum Klimaks.
+        val lateRange = map.filter { it.beatIndex < climaxIdx }.maxByOrNull { it.beatIndex }
+        if (lateRange != null) {
+            val late = (lateRange.firstScene..lateRange.lastScene).toList()
+            if (late.isNotEmpty()) {
+                val impactScene = late[(late.size - 1) / 2]
+                if (impactScene !in roles) roles[impactScene] = FightRole.IMPACT
+                val hurtScene = late.last()
+                if (hurtScene != impactScene && hurtScene !in roles) {
+                    roles[hurtScene] = FightRole.HERO_HURT
+                }
+            }
+        }
+        // TENSION = scene ke-2 tiap beat pra-Klimaks (min. 2 scene),
+        // kecuali sudah terisi peran lain (IMPACT/HERO_HURT).
+        for (range in map) {
+            if (range.beatIndex >= climaxIdx) continue
+            val scenes = (range.firstScene..range.lastScene).toList()
+            if (scenes.size >= 2) {
+                val t = scenes[1]
+                if (t !in roles) roles[t] = FightRole.TENSION
+            }
+        }
+        // EXCHANGE = semua scene fight lain sampai Klimaks (bukan
+        // FALLING/Penutup — beat setelah Klimaks tidak dapat peran).
+        for (range in map) {
+            if (range.beatIndex > climaxIdx) continue
+            for (s in range.firstScene..range.lastScene) {
+                if (s !in roles) roles[s] = FightRole.EXCHANGE
+            }
+        }
+        return roles
+    }
 }

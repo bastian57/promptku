@@ -525,13 +525,22 @@ object PromptEngine {
     // klip diam — bertentangan dengan "satu momen fokus per klip"): segmen
     // kedua kini kelanjutan aksi yang MEREDA ke pose akhir ("the motion
     // settles, ending as ..."). Scene cerita tetap 10 detik di bible.
+    /** Frasa kamera (fix8 v2): kalau scene ini melanjutkan gerakan kamera
+     *  scene sebelumnya (rantai kamera), tulis eksplisit "continuing ...
+     *  from the previous shot" — tanpa ini, dua shot whip pan berurutan
+     *  terbaca sebagai dua potongan baru, bukan satu aliran. */
+    private fun cameraPhrase(input: ShotInput): String {
+        val base = input.cameraMove?.phraseEn ?: "static locked camera"
+        return if (input.cameraContinues) "continuing $base from the previous shot" else base
+    }
+
     private fun buildFlow(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style, worldText(input))
         val shot = input.shotSize?.phraseEn ?: "medium shot"
         val angle = input.angle?.phraseEn ?: "eye level"
         val lens = "${input.lensMm ?: 35}mm"
-        val camera = input.cameraMove?.phraseEn ?: "static locked camera"
+        val camera = cameraPhrase(input)
         val light = input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
@@ -633,7 +642,7 @@ object PromptEngine {
     private fun buildWan(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style, worldText(input))
-        val camera = input.cameraMove?.phraseEn ?: "static locked camera"
+        val camera = cameraPhrase(input)
         val light = input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
         val poseStart = input.poseStart.ifBlank { "standing still" }
@@ -671,7 +680,7 @@ object PromptEngine {
     private fun buildKling(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style, worldText(input))
-        val camera = input.cameraMove?.phraseEn ?: "static locked camera"
+        val camera = cameraPhrase(input)
         val light = input.light ?: LightKind.GOLDEN_HOUR
         val mood = (input.genre ?: Genre.DRAMA).moodEn
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
@@ -732,7 +741,7 @@ object PromptEngine {
     private fun buildSeedance(input: ShotInput): GeneratedPrompt {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style, worldText(input))
-        val camera = input.cameraMove?.phraseEn ?: "static locked camera"
+        val camera = cameraPhrase(input)
         val light = input.light ?: LightKind.GOLDEN_HOUR
         val mood = (input.genre ?: Genre.DRAMA).moodEn
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }

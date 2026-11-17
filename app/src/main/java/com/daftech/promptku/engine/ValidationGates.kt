@@ -78,6 +78,12 @@ object ValidationGates {
      *  R7 PENUTUP BERSIH: aksi Penutup tanpa kata berantem/tantangan; DAN
      *    narasi yang mengklaim klimaks harus ditunjukkan aksinya di scene
      *    yang sama (bukan cuma diceritakan).
+     *  R9 DISIPLIN SLOW-MO (fix8 v2): kata slow-mo di action_en ("slow
+     *    motion", "time freezes", "time slows", ...) HANYA di scene IMPACT
+     *    + finisher; scene HERO_HURT wajib menunjukkan hero terluka
+     *    (penanda + nama hero di kalimat yang sama). Fragmen render TIDAK
+     *    digate — sudah dijamin kode (fragmen FAST tak punya kata slow-mo;
+     *    IMPACT/finisher satu-satunya yang punya). Hanya film ACTION.
      *  Kalibrasi lapangan (teks verbatim): Bima 12/18 scene melanggar
      *  (S3, S4, S5, S7, S9, S10, S11, S12, S13, S15, S17, S18); Kaito 8/18
      *  (S3, S4, S5, S6, S9, S11, S16, S17); Kaito S18 LOLOS ("raises his
@@ -196,6 +202,42 @@ object ValidationGates {
                 failures.add(
                     "Scene $num (${beat.name}): entrance ${bible.antagonistName} di luar Pembuka/Pemicu"
                 )
+            }
+        }
+
+        // R9 — disiplin slow-mo + hero terluka (fix8 v2). Hanya film
+        // ACTION (isFightFilm — rumus yang sama dengan prompter): film
+        // lain tidak punya peran fight, jadi tidak diperiksa.
+        // R9a: kata slow-mo di action_en hanya di scene IMPACT + finisher
+        // (peran dari BeatMap — SAMA dengan yang diterima prompter; kalau
+        // gerbang memakai peta lain, LLM dihukum atas peran yang tidak
+        // pernah diterimanya).
+        // R9b: scene HERO_HURT wajib menunjukkan hero terluka (penanda +
+        // nama hero di kalimat yang sama — "villain staggers" tidak dihitung).
+        if (BeatMap.isFightFilm(bible)) {
+            val roles = BeatMap.fightRoles(map, bible.beats, true)
+            val impactScene = roles.entries.firstOrNull { it.value == FightRole.IMPACT }?.key
+            val finisherScene = roles.entries.firstOrNull { it.value == FightRole.FINISHER }?.key
+            val hurtScene = roles.entries.firstOrNull { it.value == FightRole.HERO_HURT }?.key
+            for (scene in scenes) {
+                val num = scene.sceneNumber
+                val slowMo = ArcLexicon.findSlowMo(scene.plan.actionEn)
+                if (slowMo.isNotEmpty() && num != impactScene && num != finisherScene) {
+                    val beat = BeatMap.beatForScene(num, map)
+                    failures.add(
+                        "Scene $num (${beat.name}): kata slow-mo \"${slowMo.first()}\" di luar scene IMPACT/finisher"
+                    )
+                }
+            }
+            if (hurtScene != null) {
+                val hurtPlan = scenes.firstOrNull { it.sceneNumber == hurtScene }
+                if (hurtPlan != null &&
+                    !ArcLexicon.isHeroHurt(hurtPlan.plan.actionEn, bible.hero?.name.orEmpty())
+                ) {
+                    failures.add(
+                        "Scene $hurtScene: beat HERO HURT — aksi tidak menunjukkan hero terluka"
+                    )
+                }
             }
         }
 

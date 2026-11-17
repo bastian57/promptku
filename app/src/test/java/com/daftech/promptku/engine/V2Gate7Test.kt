@@ -214,12 +214,15 @@ class V2Gate7Test {
     }
 
     @Test
-    fun kaitoFilmFailsEightScenes() {
+    fun kaitoFilmFailsNineScenes() {
         val g7 = ValidationGates.runArcGate(kaitoBible(), kaitoFilm())
         assertFalse(g7.failures.toString(), g7.passed)
         assertEquals(
-            setOf(3, 4, 5, 6, 9, 11, 16, 17), mentionedScenes(g7.failures)
+            setOf(3, 4, 5, 6, 9, 11, 12, 16, 17), mentionedScenes(g7.failures)
         )
+        // v2.1 fix8 v2 — S12 BARU dari R9b: film Kaito lama TIDAK punya
+        // beat HERO HURT (S12-nya cuma "low spin kick") — temuan asli,
+        // bukan artefak tes.
         // Koreksi riset: R6 Kaito GAGAL — Klimaks maks 3 (S14), BUKAN 6.
         // S16 (skor 6) adalah Penutup, bukan Klimaks. Pra-Klimaks maks 7
         // (S9: "mencapai puncaknya" = kata + frasa); Penutup maks 11 (S17).
@@ -250,7 +253,14 @@ class V2Gate7Test {
             scenePrompt(
                 byNum[n] ?: plan(
                     n,
-                    "Kaito walks through the quiet valley, looking at the distant mountains.",
+                    // v2.1 fix8 v2 — S12 WAJIB beat HERO HURT: R9 menuntut
+                    // scene HERO_HURT menunjukkan hero terluka; film
+                    // "netral" yang lolos semua gerbang harus punya beat
+                    // itu. Nama hero di bible ini "Bima" (aksi netral lain
+                    // masih menyebut "Kaito" — noise fixture lama, gerbang
+                    // R1–R7 tidak membaca nama hero).
+                    if (n == 12) "Rudra lands a clean hit — Bima staggers back, blood on his lip, knees buckling, then his eyes harden."
+                    else "Kaito walks through the quiet valley, looking at the distant mountains.",
                     "Angin bertiup pelan di lembah yang sunyi."
                 )
             )
