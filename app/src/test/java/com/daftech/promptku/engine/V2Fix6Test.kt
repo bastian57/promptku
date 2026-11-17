@@ -66,13 +66,20 @@ class V2Fix6Test {
     }
 
     @Test
-    fun sanitizeActionStripsWorldLeakAndLeadingName() {
+    fun sanitizeActionStripsWorldLeakButKeepsActor() {
+        // v2.1 fix4 — PEMBALIKAN kontrak fix6: nama di awal aksi DIPERTAHANKAN.
+        // Bukti lapangan (export Broly 18 scene): strip fix6 bikin 13/18 aksi
+        // tanpa pelaku ("spreads its wings..." — siapa?). Bug "Frieza, Frieza"
+        // yang asli ada di DAFTAR referensi (sudah diperbaiki terpisah), bukan
+        // di aksi. Yang masih dibuang: bocor deskripsi dunia + "and" menggantung.
         val bible = friezaBible()
         val leaked = "Frieza channels the storm. A sprawling ruined metropolis, burning towers, ash falling."
         val clean = ModeRender.sanitizeAction(leaked, bible)
         assertFalse(clean, clean.contains("sprawling"))
-        assertFalse(clean, clean.lowercase().startsWith("frieza"))
-        assertTrue(clean.contains("channels the storm"))
+        assertTrue(clean, clean.startsWith("Frieza channels the storm"))
+        val andLeft = ModeRender.sanitizeAction("and the Golden Demon slam together", bible)
+        assertFalse(andLeft, andLeft.lowercase().startsWith("and "))
+        assertTrue(andLeft, andLeft.contains("Golden Demon"))
     }
 
     @Test

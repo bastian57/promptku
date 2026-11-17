@@ -41,7 +41,12 @@ object ValidationGates {
     fun runGates(
         bible: StoryBible,
         scenes: List<V2ScenePrompt>,
-        hasImages: Boolean
+        hasImages: Boolean,
+        // v2.1 fix4 — narasi wajib hanya untuk jalur CLOUD (prompter LLM
+        // wajib mengisi narration_id). Draft Offline (rule-based, tanpa AI)
+        // tidak punya sumber narasi — dibebaskan supaya G5-nya tidak merah
+        // 18x untuk sesuatu yang memang tidak ada di jalur itu.
+        requireNarration: Boolean = true
     ): List<GateResult> {
         val results = mutableListOf<GateResult>()
 
@@ -163,16 +168,21 @@ object ValidationGates {
         }
 
         // G5 — Dialog: 1 pembicara per klip, ≤8 kata.
+        // v2.1 fix4 — narasi voiceover WAJIB terisi tiap scene (propmter
+        // dilarang mengosongkan narration_id; S18 Broly hilang karena "or
+        // empty"). Scene tanpa narasi gagal di sini supaya masuk retryReasons
+        // dan prompter mengisi ulang — bukan lolos diam-diam.
         val g5Failures = scenes.mapNotNull { scene ->
             val idWords = wordCount(scene.plan.dialogueId)
             val enWords = wordCount(scene.plan.dialogueEn)
             when {
                 idWords > 8 -> "Scene ${scene.sceneNumber}: dialog ID $idWords kata (maks 8)"
                 enWords > 8 -> "Scene ${scene.sceneNumber}: dialog EN $enWords kata (maks 8)"
+                scene.plan.narrationId.isBlank() && requireNarration -> "Scene ${scene.sceneNumber}: narasi kosong (wajib terisi)"
                 else -> null
             }
         }
-        results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip", g5Failures.isEmpty(), g5Failures))
+        results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip; narasi terisi", g5Failures.isEmpty(), g5Failures))
 
         // G6 — Semua kegagalan sudah ditandai "perlu cek manual".
         val failedScenes = mutableSetOf<Int>()

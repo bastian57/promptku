@@ -488,6 +488,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         angle = scene.angle.name,
                         dialogueId = scene.dialogue?.textId.orEmpty(),
                         dialogueEn = scene.dialogue?.textEn.orEmpty(),
+                        dialogueSpeaker = scene.dialogue?.speaker.orEmpty(),
                         // Draft Offline v2 — audio dari ambience StoryInfer
                         // ("low station hum..." untuk stasiun luar angkasa),
                         // bukan "" (dulu: render jatuh ke "wind, quiet
@@ -512,7 +513,12 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
             }
             bible = result.first
             scenes = result.second
-            gates = ValidationGates.runGates(result.first, result.second, hasImages = false)
+            gates = ValidationGates.runGates(
+                result.first, result.second, hasImages = false,
+                // Draft Offline tidak punya narasi (rule-based, tanpa AI):
+                // jangan gagalkan G5 untuk itu (lihat runGates).
+                requireNarration = false
+            )
             isOfflineDraft = true
             step = V2Step.PROMPTS
             statusMessage = "DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final."

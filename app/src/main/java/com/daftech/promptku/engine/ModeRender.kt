@@ -28,10 +28,27 @@ object ModeRender {
     private fun tokensOf(text: String): Set<String> =
         text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.isNotBlank() }.toSet()
 
+    /** "a extreme close-up" -> "an extreme close-up": artikel a/an
+     *  mengikuti huruf awal frasa (vokal = "an"). Dipakai template Mode B
+     *  ("create a/an ...") — audit Broly menemukan "a extreme" 2x. */
+    fun aOrAn(phrase: String): String {
+        val first = phrase.trim().firstOrNull()?.lowercaseChar()
+        return if (first != null && first in "aeiou") "an" else "a"
+    }
+
     /** Bersihkan actionEn dari 2 cacat lapangan:
      *  (a) daftar deskripsi dunia yang bocor verbatim ke aksi;
-     *  (b) aksi diawali nama hero/antagonis ("Golden Demon channels..." ->
-     *      "channels..." — nama sudah ada di pointer sebelum aksi). */
+     *  (b) konjungsi "and" menggantung di awal aksi ("and the Golden Demon
+     *      slam together" — sisa sambungan LLM).
+     *  v2.1 fix4 — PENCABUTAN sadar: strip nama hero/antagonis di awal aksi
+     *  (fix6) DICABUT. Bukti lapangan (export Broly 18 scene): strip itu
+     *  yang bikin 13/18 aksi tanpa pelaku ("spreads its wings..." — siapa?).
+     *  Bug "Frieza, Frieza" yang asli ada di DAFTAR referensi (sudah
+     *  diperbaiki terpisah di fix6), bukan di aksi; aksi yang menyebut
+     *  pelakunya ("The Golden Demon spreads its wings...") adalah kalimat
+     *  yang benar. Prompter fix4 kini WAJIB menulis aktor di awal aksi.
+     *  Pengecualian: template KLING/WAN yang menempel nama hero sendiri
+     *  tetap menangani nama ganda di renderReference (bukan di sini). */
     fun sanitizeAction(action: String, bible: StoryBible): String {
         var out = action.trim()
         val world = bible.worldDescEn.trim()
@@ -50,16 +67,47 @@ object ModeRender {
                 }
             }
         }
-        for (name in listOfNotNull(bible.hero?.name, bible.antagonistName.ifBlank { null })) {
-            val n = name.trim()
-            if (n.isNotBlank() && out.startsWith(n, ignoreCase = true)) {
-                val rest = out.substring(n.length)
-                if (rest.isEmpty() || rest.first() in " ,;:") {
-                    out = rest.trimStart(',', ' ', ';', ':').trim()
-                }
-            }
+        // "and ..." di awal aksi = sisa konjungsi LLM; buang, aktornya tetap.
+        if (out.startsWith("and ", ignoreCase = true)) {
+            out = out.substring(4).trim()
         }
         return out
+    }
+
+    /** Buang nama HERO di AWAL aksi — HANYA untuk template WAN yang sudah
+     *  menempel nama itu sendiri ("Using the reference image of X, ...").
+     *  Nama antagonis TIDAK dibuang (tidak ganda dengan "of X"). Posesif
+     *  ("Broly's fist...") TIDAK dibuang — "'s" butuh pemiliknya; dibiarkan
+     *  utuh ("of Broly, Broly's fist..." tetap gramatikal).
+     *  FLOW/SEEDANCE/KLING tidak memakai ini (aktor dipertahankan, fix4). */
+    private fun stripLeadingName(action: String, bible: StoryBible): String {
+        val heroName = bible.hero?.name?.trim().orEmpty()
+        if (heroName.isBlank()) return action.trim()
+        val out = action.trim()
+        val stripped = when {
+            out.startsWith("The $heroName", ignoreCase = true) -> out.substring(4 + heroName.length)
+            out.startsWith(heroName, ignoreCase = true) -> out.substring(heroName.length)
+            else -> return out
+        }
+        // Hanya buang kalau nama diikuti batas kata (spasi/koma/dll) —
+        // posesif "'s" bukan batas kata: "Broly's" harus tetap utuh.
+        return if (stripped.isEmpty() || stripped.first() in " ,;:") {
+            stripped.trimStart(',', ' ', ';', ':').trim()
+        } else {
+            out
+        }
+    }
+
+    /** Apakah aksi sudah diawali nama hero/antagonis ("Broly hurls..." —
+     *  template KLING tidak perlu menempel nama lagi). */
+    private fun startsWithName(action: String, bible: StoryBible): Boolean {
+        val out = action.trim()
+        return listOfNotNull(bible.hero?.name, bible.antagonistName.ifBlank { null })
+            .any { n ->
+                n.isNotBlank() &&
+                    (out.startsWith(n, ignoreCase = true) ||
+                        out.startsWith("The $n", ignoreCase = true))
+            }
     }
 
     /** SFX vs ambience: kalau isinya nyaris sama (Jaccard >= 0.8), jangan cetak
@@ -263,7 +311,9 @@ object ModeRender {
             poseEnd = plan.poseEnd,
             audioEn = cleanField(plan.audioEn),
             dialogue = DialogueLine(
-                speaker = hero?.name.orEmpty(),
+                // v2.1 fix4 — pembicara dari rencana LLM (dialogue_speaker);
+                // kosong = hero seperti sebelumnya.
+                speaker = plan.dialogueSpeaker.ifBlank { hero?.name.orEmpty() },
                 textId = plan.dialogueId,
                 textEn = plan.dialogueEn,
                 // v2.1 — bahasa dialog pilihan user menang; jatuh ke versi yang ada.
@@ -289,9 +339,13 @@ object ModeRender {
         val sameAntagonist = bible.antagonistName.isBlank() ||
             bible.antagonistName.equals(heroName, ignoreCase = true)
         val antagonistAnd = if (sameAntagonist) "" else " and ${bible.antagonistName}"
-        val refNames = listOf(heroName) +
-            (if (sameAntagonist) emptyList() else listOf(bible.antagonistName)) +
-            listOf(bible.worldName)
+        // v2.1 fix4 — Reference Assignment (ChatGPT 15 layer): tiap gambar
+        // diberi tugas eksplisit di daftar referensi, supaya model tidak
+        // menukar peran gambar ("Broly (hero), Golden Demon (antagonist),
+        // Antarctic Abyss (environment)").
+        val refNames = listOf("$heroName (hero)") +
+            (if (sameAntagonist) emptyList() else listOf("${bible.antagonistName} (antagonist)")) +
+            listOf("${bible.worldName} (environment)")
         val refList = refNames.joinToString(", ")
         val pointer = "$heroName$antagonistAnd in the reference images"
         val shotPhrase = shot.shotSize.phraseEn
@@ -300,12 +354,18 @@ object ModeRender {
         val action = cleanField(sanitizeAction(plan.actionEn, bible))
         val world = cleanField(cleanWorldStart(bible.worldDescEn))
         val light = cleanField(bible.lightEn)
-        val dialogue = when {
-            bible.dialogueLang == "EN" && plan.dialogueEn.isNotBlank() -> " Dialogue: \"${plan.dialogueEn}\"."
-            plan.dialogueId.isNotBlank() -> " Dialogue: \"${plan.dialogueId}\"."
-            plan.dialogueEn.isNotBlank() -> " Dialogue: \"${plan.dialogueEn}\"."
+        // v2.1 fix4 — dialog ditulis beserta pembicaranya ("Dialogue (Broly):
+        // ...") bila prompter mengisinya; kosong = format lama tanpa nama.
+        val speaker = plan.dialogueSpeaker.trim()
+        val dialogueText = when {
+            bible.dialogueLang == "EN" && plan.dialogueEn.isNotBlank() -> plan.dialogueEn
+            plan.dialogueId.isNotBlank() -> plan.dialogueId
+            plan.dialogueEn.isNotBlank() -> plan.dialogueEn
             else -> ""
         }
+        val dialogue = if (dialogueText.isBlank()) "" else
+            if (speaker.isNotBlank()) " Dialogue ($speaker): \"$dialogueText\"."
+            else " Dialogue: \"$dialogueText\"."
         val audio = audioClause(plan.audioEn, bible.ambienceEn)
         val aspect = aspectClause(bible.aspectRatio)
         val referenceLine = if (imageCount >= 2) {
@@ -313,18 +373,27 @@ object ModeRender {
         } else {
             "Reference: Image 1 = $heroName. "
         }
+        // v2.1 fix4 — aksi kini WAJIB menyebut aktornya (prompter): pointer
+        // dipisah koma ("...images, the Golden Demon spreads...") supaya
+        // klausa aksi terbaca sebagai kalimat sendiri. KLING menempel nama
+        // hero sendiri di depan aksi — kalau aksi sudah diawali nama, jangan
+        // ditempel lagi ("Broly Broly hurls"). WAN juga menempel nama hero
+        // ("Using the reference image of X, ...") — nama hero di awal aksi
+        // dibuang di sana saja (stripLeadingName).
+        val klingLead = if (startsWithName(action, bible)) action else "$heroName $action"
+        val wanAction = stripLeadingName(action, bible)
         return when (engine) {
             TargetEngine.FLOW -> "Using the provided images for $refList, " +
-                "create a $shotPhrase of $pointer $action. " +
+                "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $action. " +
                 "In $world, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase, lit with $light.$dialogue $audio$aspect"
-            TargetEngine.KLING -> "$heroName $action. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
+            TargetEngine.KLING -> "$klingLead. $shotPhrase, $cameraPhrase, ${shot.lensMm}mm lens, $anglePhrase. " +
                 "Using the provided images for $refList. " +
                 "Setting: $world.$dialogue $audio$aspect"
             TargetEngine.SEEDANCE -> "Using the provided images for $refList, " +
-                "create a $shotPhrase of $pointer $action. $cameraPhrase, ${shot.lensMm}mm lens. " +
+                "create ${aOrAn(shotPhrase)} $shotPhrase of $pointer, $action. $cameraPhrase, ${shot.lensMm}mm lens. " +
                 referenceLine +
                 "Setting: $world.$dialogue $audio$aspect"
-            TargetEngine.WAN -> "Using the reference image of $heroName, $action. " +
+            TargetEngine.WAN -> "Using the reference image of $heroName, $wanAction. " +
                 "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${cleanField(plan.audioEn).ifBlank { "quiet ambience" }}.$aspect"
         }
     }

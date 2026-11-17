@@ -88,13 +88,16 @@ object DirectorPrompts {
             "{\"title\": \"...\", \"logline\": \"one sentence\", \"genre\": \"ACTION|DRAMA|ROMANSA|HOROR|SCI_FI|FANTASI|THRILLER|KOMEDI|DOKUMENTER|SEJARAH\", " +
             "\"characters\": [{\"name\": \"...\", \"anchors_en\": [\"a\", \"b\", \"c\"], \"look_en\": \"...\", \"outfit_en\": \"...\"}], " +
             "\"antagonist_name\": \"...\", \"antagonist_desc_en\": \"...\", " +
-            "\"world_name\": \"...\", \"world_desc_en\": \"one vivid paragraph, concrete nouns only\", " +
+            "\"world_name\": \"...\", \"world_desc_en\": \"one vivid flowing sentence with concrete nouns AND verbs — a real description, not a list of keywords\", " +
             "\"light_en\": \"...\", \"ambience_en\": \"...\", " +
             "\"beats\": [{\"index\": 0, \"name\": \"Pembuka\", \"summary_en\": \"...\"}], " +
             "\"episodes\": [{\"number\": 1, \"title\": \"...\", \"logline\": \"...\", \"scene_count\": 6}], " +
             "\"duration_minutes\": $durationMinutes, \"is_courier\": $isCourierHint, \"source_idea\": \"$idea\"}\n" +
             "Beats: 5 for films up to 3 minutes (Pembuka/Pemicu/Eskalasi/Klimaks/Penutup), " +
-            "8 for longer (Story Circle). Episodes: 1 if the film is short; split into episodes " +
+            "8 for longer (Story Circle). Beats must ESCALATE: tension rises through every " +
+            "beat to ONE climax near the end — never place the biggest fight in the opening " +
+            "beats, calm down in the middle, and restart the fight (that reads as two films). " +
+            "Episodes: 1 if the film is short; split into episodes " +
             "only if the story is long, each episode one arc chapter with its scene_count summing " +
             "to ${durationMinutes * 6}. The climax must fall the antagonist; the closing beat is " +
             "aftermath, no big fight after the climax."
@@ -158,8 +161,9 @@ object DirectorPrompts {
             "\"angle\": \"eye|low|high|bird\", " +
             "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty)\", " +
             "\"dialogue_en\": \"... (English version of the same line, or empty)\", " +
+            "\"dialogue_speaker\": \"... (name of the character who says the dialogue line — hero or antagonist name, or empty if no dialogue)\", " +
             "\"audio_en\": \"sound effects + ambience for this clip\", " +
-            "\"narration_id\": \"... (warm documentary voiceover in Indonesian, 1-2 sentences, Nalar tone, or empty)\", " +
+            "\"narration_id\": \"... (warm documentary voiceover in Indonesian, 1-2 sentences, Nalar tone — REQUIRED for every scene, never empty)\", " +
             "\"effect_id\": \"\" (leave empty — the app assigns effects from its internal vocabulary), " +
             "\"want_en\": \"...\", \"obstacle_en\": \"...\", \"transition_en\": \"...\"}]\n" +
             "Rules: fight moves must be DIFFERENT in every scene of the film (never repeat a " +
@@ -168,6 +172,19 @@ object DirectorPrompts {
             "include short dialogue in at least 1 scene of this batch, unless the beat is purely visual; " +
             "action_en = ONE action only — never paste the world description, setting, or a list " +
             "of places into action_en (the app pastes the world itself); " +
+            "action_en MUST name its actor explicitly at the start (e.g. 'The Golden Demon spreads " +
+            "its wings...' or 'Broly hurls a plasma wave...'), never a bare verb phrase ('spreads " +
+            "its wings...') — the app keeps the actor you write, so the actor you name is the " +
+            "actor the video shows; when both characters act in one clip, name both; " +
+            "only the hero and the antagonist appear in actions — never invent a third character, " +
+            "extra person, or 'lone survivor'; " +
+            "SECONDARY MOTION inside action_en: add one natural secondary detail — breathing, " +
+            "hair/fur rippling in the wind, fabric responding to movement, weight shifting — " +
+            "supporting the primary action, never stealing focus from it; " +
+            "FACIAL PERFORMANCE: when a scene has dialogue, the speaker's mouth must be visibly " +
+            "open (shouting or speaking clearly — video models animate speech only when the mouth " +
+            "is clearly open); give the speaker one specific expression (rage, defiance, pain, " +
+            "triumph) and write it into the action; " +
             "narration_id is a voiceover line for the narrator app, NOT dialogue — never put " +
             "dialogue words into narration_id."
     }

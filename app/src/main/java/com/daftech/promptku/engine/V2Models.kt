@@ -108,7 +108,12 @@ data class V2ScenePlan(
      *  sehingga render selalu jatuh ke default "standing still" /
      *  "standing firm" 18x. Kosong = default render seperti biasa. */
     val poseStart: String = "",
-    val poseEnd: String = ""
+    val poseEnd: String = "",
+    /** v2.1 fix4 — siapa yang mengucapkan dialog scene ini (nama hero atau
+     *  antagonis, dari LLM via "dialogue_speaker"). Kosong = pembicara
+     *  default (hero) seperti sebelumnya; render Mode B menulis
+     *  "Dialogue (Nama): ..." bila terisi. */
+    val dialogueSpeaker: String = ""
 )
 
 /** Satu scene SETELAH render lokal + gerbang validasi. */
@@ -267,7 +272,8 @@ object V2Models {
                 transitionEn = o.str("transition_en").orEmpty(),
                 narrationId = o.str("narration_id").orEmpty(),
                 poseStart = o.str("pose_start").orEmpty(),
-                poseEnd = o.str("pose_end").orEmpty()
+                poseEnd = o.str("pose_end").orEmpty(),
+                dialogueSpeaker = o.str("dialogue_speaker").orEmpty()
             )
         }.sortedBy { it.sceneNumber }
 
@@ -287,6 +293,7 @@ object V2Models {
         "transition_en" to Json.strOf(plan.transitionEn),
         "narration_id" to Json.strOf(plan.narrationId),
         "pose_start" to Json.strOf(plan.poseStart),
-        "pose_end" to Json.strOf(plan.poseEnd)
+        "pose_end" to Json.strOf(plan.poseEnd),
+        "dialogue_speaker" to Json.strOf(plan.dialogueSpeaker)
     )
 }

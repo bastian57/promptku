@@ -160,8 +160,9 @@ class V2Pipeline(
         return when (result) {
             is V2Call.Ok -> {
                 val arr = JsonLite.extractFirstArray(result.text)
-                // v2.1 fix6 — bersihkan aksi bocor (deskripsi dunia verbatim,
-                // nama di awal aksi) begitu diterima, sebelum disimpan/render.
+                // v2.1 fix6 — bersihkan aksi bocor (deskripsi dunia verbatim)
+                // begitu diterima, sebelum disimpan/render. v2.1 fix4: nama
+                // di awal aksi TIDAK lagi dibuang (aktor dipertahankan).
                 val plans = arr?.let { V2Models.scenePlansFromJson(it) }.orEmpty()
                     .map { it.copy(actionEn = ModeRender.sanitizeAction(it.actionEn, bible)) }
                 if (plans.isEmpty()) {

@@ -176,7 +176,16 @@ object StoryInfer {
                 "ninju", "meninju", "tendang", "nendang", "menendang",
                 "tembak", "nembak", "menembak", "super", "raksasa",
                 "kejar", "mengejar", "silat", "jagoan", "duel", "berkelahi",
-                "melawan"
+                "melawan",
+                // v2.1 fix4 — bentuk kata benda + bahasa Inggris (audit Broly:
+                // "Final Battle" + "Pertempuran hebat" jatuh ke DRAMA karena
+                // daftar ini cuma punya kata kerja Indonesia). SENGAJA tidak
+                // ada "perang" (bare) di sini: "medan perang" milik SEJARAH
+                // (tes Diponegoro) — ACTION dicek duluan di RULES. Juga
+                // SENGAJA tidak ada "dahsyat"/"hebat": kata sifat, bisa salah
+                // tangkap drama ("kisah cinta yang dahsyat").
+                "pertarungan", "pertempuran", "peperangan",
+                "battle", "fight", "war"
             ),
             worldName = "Kota Malam",
             worldDescEn = "a metropolitan city at night, glass towers, neon signs, wet asphalt, steam vents",

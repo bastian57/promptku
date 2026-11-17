@@ -372,7 +372,12 @@ object EffectLibrary {
         "memukul", "dipukul", "tinju", "ninju", "meninju", "tendang",
         "nendang", "menendang", "tembak", "nembak", "menembak",
         "silat", "duel", "berkelahi", "jagoan", "serang",
-        "menyerang", "diserang", "hajar", "tarung", "tumbuk"
+        "menyerang", "diserang", "hajar", "tarung", "tumbuk",
+        // v2.1 fix4 — sama seperti ACTION di StoryInfer, plus "perang"
+        // (bare): di sini aman karena detect() hanya menentukan isFight,
+        // bukan genre (tes Diponegoro-SEJARAH tidak tersentuh).
+        "pertarungan", "pertempuran", "peperangan", "perang",
+        "battle", "fight", "war"
     )
     private val EXPLOSION_TRIGGERS = listOf(
         "ledak", "ledakan", "meledak", "bom", "granat", "terbakar", "bakar",
