@@ -217,9 +217,9 @@ object DirectorPrompts {
             when (role) {
                 FightRole.EXCHANGE -> "Scene $scene = EXCHANGE: rapid flurry — 2–3 fast moves in one continuous flow, no pause, no slow motion."
                 FightRole.TENSION -> "Scene $scene = TENSION: NO contact — circling, staring, breathing, dust settling; the pause that makes the next burst feel faster."
-                FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands a heavy blow on $villain — time ramps into slow motion for a heartbeat, the camera pushes in close on $villain's face, eyes wide with pain, jaw slack, then snaps back to full speed. Write the words \"slow motion\" in action_en HERE. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
-                FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero staggers back, blood on his lip, knees buckling, then his eyes harden and he rises."
-                FightRole.FINISHER -> "Scene $scene = FINISHER: the finishing move lands in slow motion — $villain falls."
+                FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands a heavy blow on $villain — time dilates into a held heartbeat as the blow connects, $villain's face twisting in shock, then the world snaps back to full speed. Do NOT write the words \"slow motion\" in action_en — the app adds the slow-motion moment at render; write the blow and the face. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
+                FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero stumbles backward, reeling from the hit, one knee buckling, then his jaw sets and he rises."
+                FightRole.FINISHER -> "Scene $scene = FINISHER: the finishing move lands and time holds for a heartbeat — $villain falls."
                 FightRole.NONE -> ""
             }
         }
@@ -240,7 +240,10 @@ object DirectorPrompts {
         sceneNumbers: List<Int>,
         previousExit: String,
         retryReasons: Map<Int, String> = emptyMap(),
-        ledger: ArcLedger = ArcLedger.EMPTY
+        ledger: ArcLedger = ArcLedger.EMPTY,
+        // v2.1 fix7 — mode (default TEXT_ONLY untuk pemanggil lama):
+        // aturan penampilan Mode B cuma berlaku kalau ada gambar.
+        mode: V2Mode = V2Mode.TEXT_ONLY
     ): String {
         val hero = bible.hero
         val heroBlock = if (hero == null) "No hero defined."
@@ -285,6 +288,19 @@ object DirectorPrompts {
                 "NEVER write \"slow motion\", \"time freezes\", or \"freezes for a heartbeat\" in any other scene's action_en. " +
                 "Fight scenes are ONE continuous flow — each scene continues the previous scene's motion and camera; never restart the fight as a new duel. "
         } else ""
+        // v2.1 fix7 — Mode B: penampilan SUDAH di gambar (audit Aang
+        // fix9: G4 banjir karena LLM menulis "bald head with a blue arrow
+        // tattoo" ke actionEn). Aturan "do NOT redescribe the hero" di
+        // heroBlock sudah ada tapi tidak menyebut gambar/penampilan —
+        // LLM tetap menulisnya sebagai bagian dari aksi. Di Mode B,
+        // larangan ini eksplisit + beralasan (gambar yang bawa) + juga
+        // mencakup antagonis. Mode A TIDAK dapat aturan ini (tanpa
+        // gambar, penampilan WAJIB dideskripsikan).
+        val referenceRule = if (mode == V2Mode.REFERENCE) {
+            "REFERENCE IMAGES: the hero's and antagonist's appearance (face, hair, clothes, build, " +
+                "colors) is already in the reference images — NEVER describe their appearance in " +
+                "action_en; name the actor only and write what they DO. "
+        } else ""
         return "Story bible:\n" +
             "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
             "$heroBlock\n$antagonistBlock\n" +
@@ -312,7 +328,7 @@ object DirectorPrompts {
             "Rules: fight moves must be DIFFERENT in every scene of the film (never repeat a " +
             "punch/kick/grapple verbatim); a NAMED special move (Kamehameha, a named attack or " +
             "technique) may appear in AT MOST ONE scene per film — never repeat a signature move " +
-            "in two scenes; " + fightPacingRule +
+            "in two scenes; " + referenceRule + fightPacingRule +
             "the closing scene is aftermath, no big fight; " +
             "the beat block above IS the escalation rule for THIS batch — follow its intensity, " +
             "its forbidden words, and its ledger exactly (do not escalate past the beat you are " +

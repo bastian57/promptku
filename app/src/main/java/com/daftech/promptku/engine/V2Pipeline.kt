@@ -153,12 +153,15 @@ class V2Pipeline(
         sceneNumbers: List<Int>,
         previousExit: String,
         retryReasons: Map<Int, String> = emptyMap(),
-        ledger: ArcLedger = ArcLedger.EMPTY
+        ledger: ArcLedger = ArcLedger.EMPTY,
+        // v2.1 fix7 — mode diteruskan ke prompter (aturan penampilan
+        // Mode B). Default TEXT_ONLY untuk pemanggil lama/tes lama.
+        mode: V2Mode = V2Mode.TEXT_ONLY
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
             buildPrompt = {
-                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons, ledger)
+                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons, ledger, mode)
             }
         )
         return when (result) {
@@ -190,6 +193,9 @@ class V2Pipeline(
      *  sudah ada. */
     fun buildPrompts(
         bible: StoryBible,
+        // v2.1 fix7 — mode diteruskan ke prompter (aturan penampilan
+        // Mode B). Default TEXT_ONLY untuk pemanggil lama/tes lama.
+        mode: V2Mode = V2Mode.TEXT_ONLY,
         onBatch: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val all = mutableListOf<V2ScenePlan>()
@@ -201,7 +207,7 @@ class V2Pipeline(
         var previousExit = "Opening: ${bible.beats.firstOrNull()?.summaryEn.orEmpty()}"
         var ledger = ArcLedger.EMPTY
         for ((index, batch) in batches.withIndex()) {
-            val (plans, fail) = buildPromptBatch(bible, batch, previousExit, ledger = ledger)
+            val (plans, fail) = buildPromptBatch(bible, batch, previousExit, ledger = ledger, mode = mode)
             if (fail != null) return all to fail
             all.addAll(plans)
             ledger = ArcLedger.fromPlans(all, bible)

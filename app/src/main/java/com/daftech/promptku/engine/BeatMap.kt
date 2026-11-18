@@ -347,21 +347,27 @@ object ArcLexicon {
         return findWords(text, FIGHT_CHALLENGE_WORDS_EN + FIGHT_CHALLENGE_WORDS_ID)
     }
 
-    /** Pola serangan besar: (modifier ATAU verba energi) + nomina serang,
-     *  di mana pun dalam aksi. Nomina dicocokkan dengan jamak -s/-es
-     *  ("massive beams collide" kena lewat "beams" -> "beam"). "slamming
-     *  his obsidian spear" TIDAK kena (slam bukan verba energi — itu
-     *  entrance, bukan serangan besar); "hurls a blazing plasma wave" kena
-     *  (hurls + wave). */
+    /** Pola serangan besar: (modifier ATAU verba energi) + nomina serang.
+     *  v2.1 fix7 — NOMINA HARUS DEKAT trigger (jendela 6 token, token
+     *  BERBEDA). Bag-of-words lama menghitung noise: "eyes blazing" +
+     *  "spear" di klausa lain (Bima S2, Olympus S5), "hair flickering in
+     *  the blast" (Olympus S11 — "blast" sekaligus verba DAN nomina di
+     *  token yang sama). Jendela 6 diukur dari teks VERBATIM: serangan
+     *  asli terjauh 6 ("unleashes... channeling lightning", Kaito S7),
+     *  noise terdekat 8 (Olympus S11 "blast... spear"). "slamming his
+     *  obsidian spear" TIDAK kena (slam bukan verba energi — itu
+     *  entrance, bukan serangan besar); "hurls a blazing plasma wave"
+     *  kena (hurls + wave). */
     fun isBigAttack(actionEn: String): Boolean {
-        val tokens = tokenSetOf(actionEn)
-        val hasTrigger = tokens.any { it in BIG_MODIFIERS || it in BIG_ENERGY_VERBS }
-        if (!hasTrigger) return false
-        return tokens.any { token ->
-            BIG_ATTACK_NOUNS.any { noun ->
-                token == noun || token == noun + "s" || token == noun + "es"
-            }
+        val tokens = tokensOf(actionEn)
+        fun isNoun(token: String): Boolean = BIG_ATTACK_NOUNS.any { noun ->
+            token == noun || token == noun + "s" || token == noun + "es"
         }
+        val triggers = tokens.mapIndexedNotNull { i, t ->
+            if (t in BIG_MODIFIERS || t in BIG_ENERGY_VERBS) i else null
+        }
+        val nouns = tokens.mapIndexedNotNull { i, t -> if (isNoun(t)) i else null }
+        return triggers.any { ti -> nouns.any { ni -> ti != ni && kotlin.math.abs(ti - ni) <= 6 } }
     }
 
     /** Jurus bernama: frasa Kapital di tengah kalimat yang bukan nama
@@ -413,6 +419,47 @@ object ArcLexicon {
                     i++
                 }
             }
+        }
+        // v2.1 fix7 — fallback huruf kecil ("avatar state"): LLM kadang
+        // menulis jurus sebagai frasa biasa, bukan proper noun ("channels
+        // the ultimate avatar state" — film Aang fix9: "Avatar State"
+        // kapital dulu keitung, versi huruf kecil buta R4b). Scan ini
+        // SEMPIT dengan sengaja: cuma nomina TRANSFORMASI (state/form/
+        // mode) — "avatar state", "beast mode", "titan form". Deskripsi
+        // serangan generik ("energy beam", "plasma disk", "orange
+        // vortex") TIDAK dihitung jurus — itu urusan isBigAttack (R4),
+        // bukan R4b. Kandidat tetap disaring exclusions yang sama.
+        val lowerMove = extractLowercaseTransform(actionEn) ?: return null
+        val lowerKey = lowerMove.lowercase()
+        val lowerExcluded = exclusions.any { ex ->
+            ex == lowerKey || ex.contains(lowerKey) || lowerKey == ex.split(" ").lastOrNull().orEmpty()
+        }
+        return if (lowerExcluded) null else lowerMove
+    }
+
+    /** Scan huruf kecil: frasa 2 kata [X state|form|mode] yang didahului
+     *  pemicu transformasi dalam 4 token (verba energi, "ultimate",
+     *  "final", "transform", "enter", "unlock", "awaken"). "mental
+     *  state" tanpa pemicu tidak kena; "the state" (kata pertama
+     *  stopword) tidak kena. */
+    private fun extractLowercaseTransform(actionEn: String): String? {
+        val triggers = BIG_ENERGY_VERBS + setOf(
+            "ultimate", "final", "transform", "transforms", "enter", "enters",
+            "unlock", "unlocks", "awaken", "awakens"
+        )
+        val stopwords = setOf(
+            "the", "a", "an", "his", "her", "its", "their", "this", "that",
+            "with", "and", "of", "to", "in", "on", "into", "from", "as", "at"
+        )
+        val tokens = tokensOf(actionEn)
+        for (i in 0 until tokens.size - 1) {
+            val noun = tokens[i + 1]
+            if (noun !in setOf("state", "form", "mode")) continue
+            val first = tokens[i]
+            if (first.length < 3 || first in stopwords) continue
+            val window = tokens.subList(maxOf(0, i - 4), i)
+            if (window.none { it in triggers }) continue
+            return "$first $noun"
         }
         return null
     }

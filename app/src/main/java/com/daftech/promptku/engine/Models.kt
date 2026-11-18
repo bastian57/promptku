@@ -269,6 +269,11 @@ data class ShotInput(
     val lensMm: Int? = null,
     val cameraMove: CameraMove? = null,
     val light: LightKind? = null,
+    // v2.1 fix7 — teks cahaya bible VERBATIM (bukan frasa enum):
+    // "Harsh, directional sunlight..." tidak boleh diganti "soft overcast
+    // daylight" (audit Olympus 18/18 salah). Mode B sudah verbatim sejak
+    // dulu; Mode A menyusul. Kosong = perilaku lama (frasa enum).
+    val lightText: String = "",
     val actionEn: String = "",
     val poseStart: String = "",
     val poseEnd: String = "",

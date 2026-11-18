@@ -219,7 +219,11 @@ object ModeRender {
         // (scene retry jadi "last scene" sendiri -> efeknya dikosongin, audit
         // Aang: S3 kehilangan fight_impact, lensa 50 bukan 85). 0 = perilaku
         // lama (maxOf) untuk pemanggil lama/tes lama.
-        filmTotalScenes: Int = 0
+        filmTotalScenes: Int = 0,
+        // v2.1 fix7 — scene terakhir KLIMAKS (dari BeatMap, dihitung
+        // renderAll): siklus jurus berhenti di sini. 0 = perilaku lama
+        // (siklus jalan sampai akhir film) untuk pemanggil lama/tes lama.
+        climaxLastScene: Int = 0
     ): List<V2ScenePlan> {
         if (plans.isEmpty()) return plans
         val totalScenes = plans.size
@@ -279,7 +283,11 @@ object ModeRender {
                         effectId = "finisher"
                         used.add("finisher")
                     }
-                    isFight -> {
+                    // v2.1 fix7 — siklus jurus BERHENTI di Klimaks (audit
+                    // Olympus: S16 Penutup dapat "cross" dari siklus —
+                    // fragmen fight di aftermath). Scene sesudah Klimaks
+                    // jatuh ke cabang kamera / tanpa efek, bukan jurus.
+                    isFight && (climaxLastScene <= 0 || plan.sceneNumber <= climaxLastScene) -> {
                         // Jurus berikutnya yang BELUM dipakai se-film.
                         var picked = ""
                         var tries = 0
@@ -321,6 +329,33 @@ object ModeRender {
             .replace("The giant", target)
     }
 
+    /** v2.1 fix7 — gabung aksi inti + fragmen efek dengan ", then "
+     *  (bukan spasi telanjang: "expression the cross snaps" tidak
+     *  gramatikal — audit Aang fix9 S1/S2). Plus dedupe kata ganda di
+     *  sambungan: kalau kata terakhir inti == kata pertama fragmen
+     *  ("...as the" + "the blow lands"), kata inti yang dibuang — fragmen
+     *  tetap utuh (prinsip fix9), dan ", then " menutupi bekas
+     *  potongannya. Inti kosong = fragmen saja (scene hantu — gerbang
+     *  G5 yang menangkapnya, bukan join ini). */
+    fun joinActionWithFragment(core: String, frag: String): String {
+        if (frag.isBlank()) return core
+        val c = core.trim()
+        if (c.isBlank()) return frag.trim()
+        val coreWords = c.split(Regex("\\s+"))
+        val fragFirst = frag.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+            .trimEnd(',', '.', ';', ':').lowercase()
+        val coreLast = coreWords.lastOrNull().orEmpty()
+            .trimEnd(',', '.', ';', ':').lowercase()
+        val deduped = if (coreLast.isNotEmpty() && coreLast == fragFirst) {
+            coreWords.dropLast(1).joinToString(" ")
+        } else c
+        // v2.1 fix7 — koma ujung inti WAJIB dibuang sebelum ", then ":
+        // trim batas frasa memotong di koma ("...scorching wind,") dan
+        // koma itu menempel di kata ("wind,") — tanpa strip ini join jadi
+        // koma ganda ("wind,, then"). Ditemukan tes fix7 (replay S3 Aang).
+        return "${deduped.trimEnd(',').trim()}, then ${frag.trim()}"
+    }
+
     fun effectiveShot(plan: V2ScenePlan, cameraOverride: CameraMove? = null): EffectiveShot {
         val effect = EffectLibrary.ALL.firstOrNull { it.id == plan.effectId }
         return EffectiveShot(
@@ -347,11 +382,10 @@ object ModeRender {
             faceAnchor = hero.anchorsEn.getOrNull(2).orEmpty()
         )
         val effect = EffectLibrary.ALL.firstOrNull { it.id == plan.effectId }
-        val action = buildString {
-            append(cleanField(plan.actionEn))
-            val frag = effect?.let { effectFragment(it, bible) }.orEmpty()
-            if (frag.isNotBlank()) append(" ").append(frag)
-        }
+        // v2.1 fix7 — join ", then " (bukan spasi telanjang) + dedupe
+        // sambungan; lihat joinActionWithFragment.
+        val frag = effect?.let { effectFragment(it, bible) }.orEmpty()
+        val action = joinActionWithFragment(cleanField(plan.actionEn), frag)
         // v2.1 fix6 — antagonis == hero (film satu penjahat): jangan pasang
         // tokoh kedua yang isinya nama yang sama.
         val secondCharacter = if (bible.antagonistName.isBlank() ||
@@ -374,6 +408,9 @@ object ModeRender {
             cameraMove = shot.cameraMove,
             cameraContinues = cameraContinues,
             light = lightKindFrom(bible.lightEn),
+            // v2.1 fix7 — cahaya verbatim (item 6): Mode A pakai teks
+            // bible, bukan frasa enum lightKindFrom.
+            lightText = cleanField(bible.lightEn),
             actionEn = action,
             // Draft Offline v2 — pose dari rencana (rantai v1); kosong =
             // default render ("standing still" / "standing firm").
@@ -446,7 +483,9 @@ object ModeRender {
         val effect = EffectLibrary.ALL.firstOrNull { it.id == plan.effectId }
         val frag = effect?.let { effectFragment(it, bible) }.orEmpty()
         val coreAction = cleanField(sanitizeAction(plan.actionEn, bible))
-        val action = if (frag.isBlank()) coreAction else "$coreAction $frag"
+        // v2.1 fix7 — join ", then " (bukan spasi telanjang) + dedupe
+        // sambungan; lihat joinActionWithFragment.
+        val action = joinActionWithFragment(coreAction, frag)
         val world = cleanField(cleanWorldStart(bible.worldDescEn))
         val light = cleanField(bible.lightEn)
         // v2.1 fix4 — dialog ditulis beserta pembicaranya bila prompter
@@ -531,8 +570,19 @@ object ModeRender {
             // ~6 karakter/kata rata-rata: potong 1 kata per 6 karakter lebih.
             val keepByChars = if (overChars > 0) coreWords.size - (overChars / 6 + 1) else coreWords.size
             val keep = maxOf(4, minOf(keepByWords, keepByChars))
-            val trimmedCore = cleanField(coreWords.take(keep).joinToString(" "))
-            text = buildText(if (frag.isBlank()) trimmedCore else "$trimmedCore $frag")
+            // v2.1 fix7 — potong di BATAS FRASA, bukan tengah frasa (audit
+            // Aang fix9 S3: inti kepotong jadi "...as the", fragmen mulai
+            // "the blow lands" -> "the the"). Mundur ke koma/"and"
+            // terakhir di dalam teks yang dipertahankan, tapi jangan mundur
+            // lebih dari 8 kata (kalau batasnya jauh, potongan kata lebih
+            // berharga daripada kerapian). Dedupe sambungan ditangani
+            // joinActionWithFragment di bawah.
+            val keptText = coreWords.take(keep).joinToString(" ")
+            val boundaryAt = maxOf(keptText.lastIndexOf(", "), keptText.lastIndexOf(" and "))
+            val boundaryKeep = if (boundaryAt > 0) MythFilter.countWords(keptText.substring(0, boundaryAt)) else keep
+            val finalKeep = if (boundaryKeep >= maxOf(4, keep - 8)) boundaryKeep else keep
+            val trimmedCore = cleanField(coreWords.take(finalKeep).joinToString(" "))
+            text = buildText(joinActionWithFragment(trimmedCore, frag))
         }
         return text
     }
@@ -590,10 +640,14 @@ object ModeRender {
         // penuh (scene 10 tetap IMPACT walau retry cuma 3 scene).
         val beatMap = BeatMap.build(bible.totalScenes, bible.beats)
         val roles = BeatMap.fightRoles(beatMap, bible.beats, isFight)
+        // v2.1 fix7 — batas akhir Klimaks untuk siklus jurus (item 1):
+        // scene Penutup tidak boleh dapat jurus fight dari siklus.
+        val climaxLastScene = beatMap.getOrNull(BeatMap.climaxIndex(bible.beats))?.lastScene
+            ?: bible.totalScenes
         // v2.1 fix9 — teruskan scene terakhir FILM ke assignEffects (bukan
         // maxOf daftar plans): render subset (retry/regenerasi) tidak boleh
         // mengubah siapa "scene terakhir" — audit Aang.
-        val assigned = assignEffects(plans, isFight, totalBeats, roles, bible.totalScenes)
+        val assigned = assignEffects(plans, isFight, totalBeats, roles, bible.totalScenes, climaxLastScene)
         // v2.1 fix6 (riset) — Mode A cloud tidak punya pose (prompter JSON
         // tak ada field pose) -> "Ends as standing firm." 18x (Bima). Isi
         // dari siklus di sini, SETELAH assignEffects, SEBELUM renderScene:

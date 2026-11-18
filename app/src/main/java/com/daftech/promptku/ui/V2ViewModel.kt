@@ -658,7 +658,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         // 15 menit, bukan 10 — run free-tier yang lambat tapi
                         // jalan (5 batch + retry) wajar sampai ~11 menit.
                         withTimeout(900_000L) {
-                            pipeline().buildPrompts(current) { done, total ->
+                            pipeline().buildPrompts(current, mode) { done, total ->
                                 // Callback dipanggil dari thread IO — lempar
                                 // ke Main (tulis state Compose dari IO crash).
                                 viewModelScope.launch(Dispatchers.Main) {
@@ -717,7 +717,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     val (retryPlans, _) = withContext(Dispatchers.IO) {
                         try {
                             withTimeout(300_000L) {
-                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons, retryLedger)
+                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons, retryLedger, mode)
                             }
                         } catch (e: TimeoutCancellationException) {
                             // Retry nyangkut: pakai hasil pertama, jangan hang.
@@ -828,7 +828,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 val (newPlans, fail) = withContext(Dispatchers.IO) {
                     try {
                         withTimeout(300_000L) {
-                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons, regenLedger)
+                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons, regenLedger, mode)
                         }
                     } catch (e: TimeoutCancellationException) {
                         emptyList<V2ScenePlan>() to V2Call.Fail(

@@ -11,7 +11,8 @@ import org.junit.Test
 // "serangan terakhir" — plus "triumph" 2), Kaito S17 = 11 (bukan 9 —
 // "Kemenangan" ganda: "menang" + "kemenangan" — dan TANPA named move
 // setelah posesif "Golden Frieza's" dikecualikan), Klimaks maks = 3
-// (S15 Bima / S14 Kaito — S16 Kaito skor 6 itu PENUTUP, bukan Klimaks).
+// (S15 Bima / S14 Kaito — S16 Kaito skor 3 itu PENUTUP, bukan Klimaks;
+// v2.1 fix7: big 3 S16 hilang — "blazing" + "beam" berjarak 9 token).
 class V2IntensityScoreTest {
 
     private fun bimaBible(): StoryBible = StoryBible(
@@ -95,16 +96,18 @@ class V2IntensityScoreTest {
     }
 
     @Test
-    fun kaitoScene16IsSix() {
-        // big 3 + named "Kamehameha" 1 + "akhir" 2. S16 adalah PENUTUP —
-        // skor ini TIDAK masuk Klimaks (R6), melainkan Penutup (R6b).
+    fun kaitoScene16IsThree() {
+        // v2.1 fix7 — big 3 HILANG: "blazing" + "beam" berjarak 9 token
+        // (noise proximity). Skor = named "Kamehameha" 1 + "akhir" 2.
+        // S16 adalah PENUTUP — skor ini TIDAK masuk Klimaks (R6),
+        // melainkan Penutup (R6b).
         val bible = kaitoBible()
         val score = ArcLexicon.intensityScore(
             "Kaito channels a blinding Kamehameha, his aura blazing orange, his breath huffing heavily, and releases the beam toward Frieza's violet energy field.",
             "Saat energi biru dan oranye bertabrakan, ledakan cahaya menentukan akhir pertarungan antara dua legenda.",
             bible
         )
-        assertEquals(6, score)
+        assertEquals(3, score)
     }
 
     @Test

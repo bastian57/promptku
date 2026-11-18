@@ -33,6 +33,22 @@ object ValidationGates {
         return if (last in DANGLING_ENDINGS) last else null
     }
 
+    /** v2.1 fix7 — narasi = salinan kalimat dunia (Bima, Olympus, Aang
+     *  fix9 S1: narration_id == worldDescEn verbatim). Normalisasi
+     *  (case + titik ujung + spasi ganda) lalu bandingkan utuh ATAU
+     *  awalan 40 karakter pertama dunia (kepala yang sama dipakai
+     *  sanitizeAction untuk mendeteksi bocoran dunia). Narasi Indonesia
+     *  yang sah tidak pernah diawali teks dunia Inggris — false
+     *  positive hampir mustahil. */
+    fun narrationIsWorldCopy(narration: String, world: String): Boolean {
+        fun norm(s: String): String = s.trim().trimEnd('.').trim().lowercase()
+            .replace(Regex("\\s+"), " ")
+        val n = norm(narration)
+        val w = norm(world)
+        if (n.isEmpty() || w.isEmpty()) return false
+        return n == w || n.startsWith(w.take(40))
+    }
+
     private val FIGHT_VERBS = listOf(
         "punch", "punches", "kick", "kicks", "grapple", "grapples",
         "slam", "slams", "uppercut", "strike", "strikes", "hit", "hits",
@@ -393,6 +409,16 @@ object ValidationGates {
                     g4Failures.add("Scene ${scene.sceneNumber}: tidak menunjuk gambar referensi")
                 }
                 hero?.anchorsEn?.forEach { anchor ->
+                    // v2.1 fix7 — anchor NAMA BARE ("Aang") dikecualikan:
+                    // fix4 WAJIB menamai aktor di tiap aksi, jadi nama pasti
+                    // muncul dan pasti ke-flag — noise, bukan sinyal (audit
+                    // Aang fix9: 66× "bertabrakan", sebagian besar dari
+                    // anchor nama). Yang dicek cuma anchor PENAMPILAN
+                    // ("bald head with a blue arrow tattoo"). Anchor yang
+                    // MENGANDUNG nama ("Aang's scarred shield") tetap dicek.
+                    if (anchor.trim().equals(hero?.name, ignoreCase = true) ||
+                        anchor.trim().equals(bible.antagonistName, ignoreCase = true)
+                    ) return@forEach
                     if (anchor.length >= 4 && text.contains(anchor.lowercase())) {
                         g4Failures.add("Scene ${scene.sceneNumber}: deskripsi subjek penuh (\"$anchor\") bertabrakan dengan gambar")
                     }
@@ -442,16 +468,30 @@ object ValidationGates {
             val chosenBlank = if (bible.dialogueLang == "EN") scene.plan.dialogueEn.isBlank()
                 else scene.plan.dialogueId.isBlank()
             val dangling = danglingWord(scene.plan.actionEn)
+            // v2.1 fix7 — aksi kosong (audit Olympus S17 "scene hantu":
+            // aksi inti kosong, render cuma fragmen efek). Cek aksi
+            // SETELAH sanitizeAction (aksi yang isinya cuma kalimat dunia
+            // dikosongkan sanitizeAction saat render — gerbang harus
+            // membaca yang sama dengan yang dirender). Cabang pertama:
+            // aksi kosong paling parah, laporkan itu dulu.
+            val cleanAction = ModeRender.sanitizeAction(scene.plan.actionEn, bible)
             when {
+                cleanAction.isBlank() -> "Scene ${scene.sceneNumber}: aksi kosong (tidak ada aksi di klip ini)"
                 idWords > 8 -> "Scene ${scene.sceneNumber}: dialog ID $idWords kata (maks 8)"
                 enWords > 8 -> "Scene ${scene.sceneNumber}: dialog EN $enWords kata (maks 8)"
                 hasDialogue && chosenBlank -> "Scene ${scene.sceneNumber}: dialog ada tapi bukan bahasa pilihan (${bible.dialogueLang})"
                 scene.plan.narrationId.isBlank() && requireNarration -> "Scene ${scene.sceneNumber}: narasi kosong (wajib terisi)"
+                // v2.1 fix7 — narasi = salinan kalimat dunia (Bima, Olympus,
+                // Aang fix9 S1). Gagal gerbang (retryable) supaya prompter
+                // menulis narasi sendiri. requireNarration yang sama dengan
+                // cek kosong: draft offline dibebaskan.
+                scene.plan.narrationId.isNotBlank() && requireNarration &&
+                    narrationIsWorldCopy(scene.plan.narrationId, bible.worldDescEn) -> "Scene ${scene.sceneNumber}: narasi sama dengan kalimat dunia (tulis narasi sendiri, bukan deskripsi dunia)"
                 dangling != null -> "Scene ${scene.sceneNumber}: aksi menggantung di kata '$dangling' (kalimat tidak selesai)"
                 else -> null
             }
         }
-        results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip; narasi terisi; aksi tidak menggantung", g5Failures.isEmpty(), g5Failures))
+        results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip; narasi terisi & bukan salinan dunia; aksi terisi & tidak menggantung", g5Failures.isEmpty(), g5Failures))
 
         // G7 — Satu Puncak (fix6 riset): alur naik ke SATU klimaks.
         // Membaca action_en DAN narration_id (narasi membawa 9/12 klaim

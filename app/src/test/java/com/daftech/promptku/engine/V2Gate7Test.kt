@@ -15,8 +15,11 @@ import org.junit.Test
 // resolusi), skornya 12 bukan 6 ("terakhir" ganda + frasa + "triumph");
 // (2) R6 Kaito GAGAL (Klimaks maks 3 dari S13–15 — S16 adalah PENUTUP,
 // bukan Klimaks); pra-Klimaks Kaito 7 (S9), Penutup 11 (S17);
-// (3) Bima S2 JUGA big attack (bag-of-words: "blazing" + "spear") —
-// R4 Pembuka jadi "2x", bukan "1x".
+// (3) v2.1 fix7 — Bima S2 BUKAN big attack lagi ("blazing" + "spear"
+// berjarak 23 token — proximity 6 membunuh noise ini; R4 Pembuka jadi
+// "1x", bukan "2x"). Kalibrasi fix6 sempat membaliknya ("tidak harus
+// sebelahan") — fix7 membalik lagi dengan bukti ukur (serangan asli
+// terjauh 6, noise terdekat 8).
 class V2Gate7Test {
 
     private fun bimaBible(): StoryBible = StoryBible(
@@ -198,11 +201,13 @@ class V2Gate7Test {
         assertTrue(s3.toString(), s3.any { it.contains("klaim finalitas") })
         // Koreksi riset: "shouting in triumph" = klaim resolusi di Pembuka.
         assertTrue(s3.toString(), s3.any { it.contains("klaim resolusi") })
-        // "serangan besar 2x": S3 (unleashes/channeling + lightning) DAN S2
-        // — isBigAttack bag-of-words: "blazing" (modifier) + "spear"
-        // (nomina, di klausa lain) sudah cukup. Riset sempat bilang S2
-        // bukan big attack — SALAH, trigger + nomina tidak harus sebelahan.
-        assertTrue(s3.toString(), s3.any { it.contains("serangan besar 2x (maks 0 per beat)") })
+        // v2.1 fix7 — "serangan besar 1x": HANYA S3. S2 BUKAN big attack
+        // lagi: "blazing" + "spear" berjarak 23 token (klausa lain) —
+        // proximity 6 membunuh noise ini. Kalibrasi fix6 sempat bilang
+        // S2 big attack ("trigger + nomina tidak harus sebelahan") —
+        // fix7 membalik dengan bukti ukur (serangan asli terjauh 6,
+        // noise terdekat 8).
+        assertTrue(s3.toString(), s3.any { it.contains("serangan besar 1x (maks 0 per beat)") })
         assertTrue(s3.toString(), s3.any { it.contains("jurus bernama") })
     }
 

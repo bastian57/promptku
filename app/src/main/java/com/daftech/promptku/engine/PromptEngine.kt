@@ -541,7 +541,9 @@ object PromptEngine {
         val angle = input.angle?.phraseEn ?: "eye level"
         val lens = "${input.lensMm ?: 35}mm"
         val camera = cameraPhrase(input)
-        val light = input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn
+        // v2.1 fix7 — cahaya verbatim dari bible (item 6): teks bible
+        // menang atas frasa enum; kosong = perilaku lama.
+        val light = input.lightText.ifBlank { input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn }
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
         val material = input.materialEn.ifBlank { materialDefaultFor(worldText(input)) }
@@ -643,7 +645,8 @@ object PromptEngine {
         val style = input.style ?: VisualStyle.REALISTIC
         val look = styleLook(style, worldText(input))
         val camera = cameraPhrase(input)
-        val light = input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn
+        // v2.1 fix7 — cahaya verbatim dari bible (item 6).
+        val light = input.lightText.ifBlank { input.light?.phraseEn ?: LightKind.GOLDEN_HOUR.phraseEn }
         val action = input.actionEn.ifBlank { "stands still, breathing slowly" }
         val poseStart = input.poseStart.ifBlank { "standing still" }
         val poseEnd = input.poseEnd.ifBlank { "standing firm" }
@@ -705,7 +708,8 @@ object PromptEngine {
             Sentence("$material.", mandatory = false, dropPriority = 3),
             Sentence("$camera.", mandatory = true, dropPriority = 0),
             Sentence(
-                "Lit with ${shortLight(light)}. ${look.first}, ${look.second}.",
+                // v2.1 fix7 — cahaya verbatim dari bible (item 6).
+                "Lit with ${input.lightText.ifBlank { shortLight(light) }}. ${look.first}, ${look.second}.",
                 mandatory = false,
                 dropPriority = 2
             ),
@@ -760,7 +764,8 @@ object PromptEngine {
                 dropPriority = 0
             ),
             Sentence(
-                "Setting: ${shortWorld(input)}. Light: ${shortLight(light)}. Mood: $mood.",
+                // v2.1 fix7 — cahaya verbatim dari bible (item 6).
+                "Setting: ${shortWorld(input)}. Light: ${input.lightText.ifBlank { shortLight(light) }}. Mood: $mood.",
                 mandatory = false,
                 dropPriority = 2
             ),

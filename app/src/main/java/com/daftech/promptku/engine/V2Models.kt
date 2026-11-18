@@ -250,6 +250,20 @@ object V2Models {
         )
     }
 
+    /** v2.1 fix7 — narasi LLM kadang diawali label "Narator:" / "Suara
+     *  narator:" / "Narration:" (audit Olympus: prefix tidak konsisten
+     *  S4–S7). Label dibuang saat parsing — narasi yang disimpan dan
+     *  diekspor bersih. Berulang (label ganda) + case-insensitive. */
+    fun stripNarrationPrefix(text: String): String {
+        var out = text.trim()
+        while (true) {
+            val m = Regex("^(narator|suara narator|narration|narrator)\\s*:\\s*", RegexOption.IGNORE_CASE)
+                .find(out) ?: break
+            out = out.substring(m.value.length).trim()
+        }
+        return out
+    }
+
     fun scenePlansFromJson(arr: Json.Arr): List<V2ScenePlan> =
         arr.items.mapNotNull { item ->
             val o = item as? Json.Obj ?: return@mapNotNull null
@@ -270,7 +284,7 @@ object V2Models {
                 wantEn = o.str("want_en").orEmpty(),
                 obstacleEn = o.str("obstacle_en").orEmpty(),
                 transitionEn = o.str("transition_en").orEmpty(),
-                narrationId = o.str("narration_id").orEmpty(),
+                narrationId = stripNarrationPrefix(o.str("narration_id").orEmpty()),
                 poseStart = o.str("pose_start").orEmpty(),
                 poseEnd = o.str("pose_end").orEmpty(),
                 dialogueSpeaker = o.str("dialogue_speaker").orEmpty()
