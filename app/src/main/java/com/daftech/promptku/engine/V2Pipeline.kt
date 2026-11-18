@@ -163,7 +163,11 @@ class V2Pipeline(
         mode: V2Mode = V2Mode.TEXT_ONLY,
         // v2.2 — engine tujuan diteruskan ke prompter (aturan panjang +
         // audio per engine). Default FLOW untuk pemanggil lama/tes lama.
-        engine: TargetEngine = TargetEngine.FLOW
+        engine: TargetEngine = TargetEngine.FLOW,
+        // v2.2-fix2 — penjaga rekursi: batch kosong diulang SATU kali
+        // dengan nudge perbaikan (lihat bawah). Default false untuk
+        // pemanggil lama/tes lama.
+        isRetry: Boolean = false
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
@@ -180,8 +184,37 @@ class V2Pipeline(
                 val plans = arr?.let { V2Models.scenePlansFromJson(it) }.orEmpty()
                     .map { it.copy(actionEn = ModeRender.sanitizeAction(it.actionEn, bible)) }
                 if (plans.isEmpty()) {
+                    // v2.2-fix2 — film Gotres (18 Nov, malam): batch scene 1
+                    // kosong, tap ulang -> scene 1 jadi, batch scene 2 kosong
+                    // lagi — film terpotong 1/6. "Scene kosong" BUKAN gagal
+                    // HTTP: provider mengembalikan 200 + teks, tapi teks itu
+                    // tidak mengandung array plan yang bisa di-parse (prosa /
+                    // JSON terpotong / item tanpa scene_number/action_en).
+                    // Dua cacat struktural di sini:
+                    // (1) buildPrompts TIDAK PERNAH mengulang batch yang
+                    // gagal — satu batch buruk memotong SELURUH film, dan
+                    // tap ulang mengulang dari scene 1 (kuota batch yang
+                    // sudah jadi terbuang). Obat: ulang SATU kali per batch,
+                    // dengan nudge eksplisit "hanya array JSON" (alasan
+                    // perbaikan digabung dengan retryReasons yang sudah ada,
+                    // bukan menimpanya — jalur retry G6 tetap membawa alasan
+                    // gerbangnya).
+                    // (2) teks mentah LLM DIBUANG — kegagalan berikutnya
+                    // tidak bisa didiagnosis. Obat: pesan gagal membawa nama
+                    // provider + 160 karakter pertama balasan mentah.
+                    if (!isRetry) {
+                        val repairKey = sceneNumbers.firstOrNull() ?: 0
+                        val repairText = "Return ONLY the JSON array of scene plans, no prose before or after it."
+                        val mergedReasons = retryReasons + (repairKey to
+                            (retryReasons[repairKey]?.let { "$it $repairText" } ?: repairText))
+                        return buildPromptBatch(
+                            bible, sceneNumbers, previousExit, mergedReasons,
+                            ledger, mode, engine, isRetry = true
+                        )
+                    }
                     emptyList<V2ScenePlan>() to V2Call.Fail(
-                        "Prompter mengembalikan scene kosong untuk scene ${sceneNumbers.joinToString(", ")} — coba lagi.",
+                        "Prompter mengembalikan scene kosong untuk scene ${sceneNumbers.joinToString(", ")} (${result.provider.label}) — coba lagi. " +
+                            "Balasan mentah: ${result.text.take(160).replace('\n', ' ')}",
                         retryable = true
                     )
                 } else plans to null
