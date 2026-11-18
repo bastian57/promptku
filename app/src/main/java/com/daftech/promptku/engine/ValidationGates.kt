@@ -306,14 +306,29 @@ object ValidationGates {
                 .values.maxOrNull() ?: 0
             val closeMax = scores.filterKeys { it in closingRange.firstScene..closingRange.lastScene }
                 .values.maxOrNull() ?: 0
+            // v2.2-fix4 — pesan R6 WAJIB membawa nomor scene: gateSceneNumbers
+            // (V2ViewModel) hanya membaca regex "Scene (\d+)" dari teks
+            // kegagalan, jadi R6 yang pesannya tanpa nomor scene tidak pernah
+            // menandai apa-apa (film Langit New York: R6 10 vs 5 tak terlihat
+            // di export; vonis "G7-clean" Peak of Destiny ikut gugur).
+            // Jangkarnya = scene yang skornya paling tinggi di rentang itu
+            // (bukan nomor beat): Penutup yang kelewat kuat ditandai di
+            // scene Penutup-nya, pra-Klimaks yang kelewat kuat di scene-nya
+            // sendiri — supaya retry G6 menulis ulang scene yang benar.
             if (preMax > climaxMax) {
+                val preScene = scores.filterKeys { it < climaxRange.firstScene }
+                    .maxByOrNull { it.value }?.key ?: climaxRange.firstScene
+                val preBeat = BeatMap.beatForScene(preScene, map)
                 failures.add(
-                    "Kurva intensitas: puncak pra-Klimaks ($preMax) mengalahkan Klimaks ($climaxMax)"
+                    "Scene $preScene (${preBeat.name}): Kurva intensitas: puncak pra-Klimaks ($preMax) mengalahkan Klimaks ($climaxMax)"
                 )
             }
             if (climaxMax > 0 && closeMax >= climaxMax) {
+                val closeScene = scores.filterKeys { it in closingRange.firstScene..closingRange.lastScene }
+                    .maxByOrNull { it.value }?.key ?: closingRange.firstScene
+                val closeBeat = BeatMap.beatForScene(closeScene, map)
                 failures.add(
-                    "Kurva intensitas: Penutup ($closeMax) setinggi/melebihi Klimaks ($climaxMax)"
+                    "Scene $closeScene (${closeBeat.name}): Kurva intensitas: Penutup ($closeMax) setinggi/melebihi Klimaks ($climaxMax)"
                 )
             }
         }
