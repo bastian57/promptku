@@ -354,11 +354,22 @@ object ArcLexicon {
     private fun peakIsOnlyPlaceWord(text: String): Boolean {
         val tokens = tokensOf(text)
         var found = false
-        for (i in tokens.indices) {
-            if (!stemMatches(tokens[i], "puncak")) continue
+        var i = 0
+        while (i < tokens.size) {
+            if (!stemMatches(tokens[i], "puncak")) { i++; continue }
             found = true
-            val next = tokens.getOrNull(i + 1)
+            // v2.2-fix3 — reduplikasi "puncak-puncak gunung" (lapangan
+            // Gotres 19 Nov 00:18, narasi S1 verbatim): tokensOf membelah
+            // tanda hubung, jadi token sesudah "puncak" pertama adalah
+            // "puncak" kedua, bukan kata tempat — pengecualian gagal dan
+            // "puncak-puncak gunung" (jamak: puncak-puncak = peaks)
+            // dituduh klaim klimaks (R1 + R7-narasi). Lewati semua
+            // "puncak" berurutan dulu, baru cek kata tempat sesudahnya.
+            var j = i + 1
+            while (j < tokens.size && stemMatches(tokens[j], "puncak")) j++
+            val next = tokens.getOrNull(j)
             if (next == null || next !in PEAK_PLACE_WORDS) return false
+            i = j
         }
         return found
     }
