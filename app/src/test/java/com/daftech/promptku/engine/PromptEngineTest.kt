@@ -44,7 +44,8 @@ class PromptEngineTest {
         assertTrue(prompt.text.contains("Cell"))
         assertTrue(prompt.text.contains("Same face and proportions throughout"))
         assertNull(prompt.negativePrompt)
-        assertTrue(prompt.wordCount in 40..180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 210 kata).
+        assertTrue(prompt.wordCount in 40..300)
     }
 
     @Test
@@ -81,7 +82,8 @@ class PromptEngineTest {
         assertTrue(prompt.text.contains("[4-6s]"))
         assertTrue(prompt.text.contains("Constraints:"))
         assertNull(prompt.negativePrompt)
-        assertTrue(prompt.wordCount in 40..120)
+        // v2.2 — cap Seedance 100 -> 250 (terukur 141 kata).
+        assertTrue(prompt.wordCount in 40..250)
     }
 
     @Test
@@ -100,7 +102,8 @@ class PromptEngineTest {
         val prompt = PromptEngine.build(template.input)
         assertTrue(prompt.text.contains("Goku"))
         assertTrue(prompt.text.contains("[00:00-00:04]"))
-        assertTrue(prompt.wordCount in 40..180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 210 kata).
+        assertTrue(prompt.wordCount in 40..300)
         assertTrue(prompt.warnings.isNotEmpty())
         assertTrue(prompt.warnings.first().contains("filter IP"))
     }

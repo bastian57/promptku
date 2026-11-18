@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import com.daftech.promptku.engine.Genre
+import com.daftech.promptku.engine.TargetEngine
 
 // Layar 1 v2.1 — Ide + bank tokoh DNA + gambar referensi + pengaturan film.
 // Bottom bar cuma Cerita + Proyek: tab lama yang dihapus fungsinya pindah ke sini.
@@ -201,6 +202,16 @@ fun V2IdeaScreen(v2: V2ViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChoiceChip("Indonesia", selected = v2.dialogueLang == "ID", onClick = { v2.updateDialogueLang("ID") })
                 ChoiceChip("English", selected = v2.dialogueLang == "EN", onClick = { v2.updateDialogueLang("EN") })
+            }
+        }
+        // v2.2 — engine tujuan: prompter menulis khusus untuk engine ini
+        // (satu profil panjang + aturan audio), bukan generik 4 engine.
+        item {
+            Text("Engine tujuan (prompter menulis khusus untuk engine ini):")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TargetEngine.values().forEach { engine ->
+                    ChoiceChip(engine.name, selected = v2.targetEngine == engine, onClick = { v2.updateTargetEngine(engine) })
+                }
             }
         }
         item {

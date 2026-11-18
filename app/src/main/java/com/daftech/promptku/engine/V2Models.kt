@@ -69,6 +69,8 @@ data class StoryBible(
     /** v2.1 — pilihan user di Layar Ide (bukan tebakan LLM). */
     val aspectRatio: String = "9:16",
     val dialogueLang: String = "ID",
+    /** v2.2 — engine tujuan pilihan user di Layar Ide (default Flow). */
+    val targetEngine: TargetEngine = TargetEngine.FLOW,
     val episodeNumber: Int = 1
 ) {
     val hero: V2Character? get() = characters.firstOrNull()
@@ -190,6 +192,10 @@ object V2Models {
             // v2.1 — default aman untuk bible lama (cache fix7 ke bawah).
             aspectRatio = obj.str("aspect_ratio")?.takeIf { it == "16:9" || it == "9:16" } ?: "9:16",
             dialogueLang = obj.str("dialogue_lang")?.takeIf { it == "EN" || it == "ID" } ?: "ID",
+            // v2.2 — default Flow untuk bible lama (tanpa target_engine).
+            targetEngine = obj.str("target_engine")?.let {
+                runCatching { TargetEngine.valueOf(it) }.getOrNull()
+            } ?: TargetEngine.FLOW,
             episodeNumber = (obj.num("episode_number")?.toInt() ?: 1).coerceAtLeast(1)
         )
     }
@@ -232,6 +238,7 @@ object V2Models {
         "source_idea" to Json.strOf(bible.sourceIdea),
         "aspect_ratio" to Json.strOf(bible.aspectRatio),
         "dialogue_lang" to Json.strOf(bible.dialogueLang),
+        "target_engine" to Json.strOf(bible.targetEngine.name),
         "episode_number" to Json.numOf(bible.episodeNumber)
     )
 

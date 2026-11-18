@@ -57,9 +57,11 @@ class DnaBudgetTest {
         assertTrue(prompt.text.contains("[00:04-00:08]"))
         assertTrue(prompt.text.contains("Audio:"))
         assertTrue(prompt.text.contains("golden-hour"))
-        assertTrue(prompt.wordCount <= 180)
-        assertTrue(prompt.warnings.any { it.contains("dipangkas") })
-        assertTrue(prompt.warnings.any { it.contains("129") })
+        // v2.2 — cap Flow 180 -> 300: DNA lapangan 129 kata kini muat
+        // utuh (253 kata, tanpa dipangkas). Jalur trim tetap teruji di
+        // secondCharacterLongDnaIsAlsoCapped + pathologicalLongWorld.
+        assertTrue(prompt.wordCount <= 300)
+        assertFalse(prompt.warnings.any { it.contains("dipangkas") })
     }
 
     @Test
@@ -82,7 +84,8 @@ class DnaBudgetTest {
         assertTrue(prompt.text.contains("[00:00-00:04]"))
         assertTrue(prompt.text.contains("Audio:"))
         assertTrue(prompt.text.contains("Cell"))
-        assertTrue(prompt.wordCount <= 180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 291 kata).
+        assertTrue(prompt.wordCount <= 300)
         assertTrue(prompt.warnings.any { it.contains("dipangkas") })
     }
 
@@ -93,7 +96,8 @@ class DnaBudgetTest {
             world = WorldLock("Bengkel Panjang", longWorld)
         )
         val prompt = PromptEngine.build(input)
-        assertTrue(prompt.wordCount <= 180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 291 kata).
+        assertTrue(prompt.wordCount <= 300)
         assertTrue(prompt.warnings.any { it.contains("dipangkas") })
     }
 
@@ -123,6 +127,7 @@ class DnaBudgetTest {
         )
         val prompt = PromptEngine.build(input)
         assertTrue(prompt.text, prompt.text.contains("Riko says, in a low, steady voice: I don't understand."))
-        assertTrue(prompt.wordCount <= 180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 263 kata).
+        assertTrue(prompt.wordCount <= 300)
     }
 }

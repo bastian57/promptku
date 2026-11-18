@@ -102,11 +102,16 @@ object ModeRender {
      *  template KLING tidak perlu menempel nama lagi). */
     private fun startsWithName(action: String, bible: StoryBible): Boolean {
         val out = action.trim()
+        // v2.2 — aksi Mode B bisa diawali marker beat "[00:00-00:03]": nama
+        // hero di DALAM marker bukan awalan nama. Kupas satu grup bracket
+        // di depan dulu, baru cek nama (tanpa ini KLING menempel nama dobel:
+        // "Aang [00:00-00:03] Aang punches...").
+        val stripped = out.replaceFirst(Regex("^\\[[^\\]]+\\]\\s*"), "")
         return listOfNotNull(bible.hero?.name, bible.antagonistName.ifBlank { null })
             .any { n ->
                 n.isNotBlank() &&
-                    (out.startsWith(n, ignoreCase = true) ||
-                        out.startsWith("The $n", ignoreCase = true))
+                    (stripped.startsWith(n, ignoreCase = true) ||
+                        stripped.startsWith("The $n", ignoreCase = true))
             }
     }
 

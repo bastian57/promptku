@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.daftech.promptku.engine.TargetEngine
 
 // Layar 2 v2.0 — Cerita hasil Director + chip konfirmasi + revisi.
 @Composable
@@ -44,7 +45,7 @@ fun V2StoryScreen(v2: V2ViewModel) {
             Text(bible.title)
             Text("Logline: ${bible.logline}")
             Text("Genre: ${bible.genre} • Durasi: ${bible.durationMinutes} menit • ${bible.totalScenes} scene")
-            Text("Rasio: ${bible.aspectRatio} • Dialog: ${if (bible.dialogueLang == "EN") "English" else "Indonesia"}${if (bible.episodeNumber > 1) " • Episode ${bible.episodeNumber}" else ""}")
+            Text("Rasio: ${bible.aspectRatio} • Dialog: ${if (bible.dialogueLang == "EN") "English" else "Indonesia"} • Engine: ${bible.targetEngine.name}${if (bible.episodeNumber > 1) " • Episode ${bible.episodeNumber}" else ""}")
             if (v2.isOfflineDraft) {
                 Text("DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")
             }
@@ -92,6 +93,18 @@ fun V2StoryScreen(v2: V2ViewModel) {
                     enabled = !v2.busy
                 ) {
                     Text("Kisah kurir? ${if (bible.isCourier) "YA" else "TIDAK"}")
+                }
+            }
+            // v2.2 — ganti engine tujuan (prompter berikutnya pakai engine
+            // baru; render ulang ke engine lain tetap gratis).
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TargetEngine.values().forEach { engine ->
+                    OutlinedButton(
+                        onClick = { v2.updateTargetEngineChip(engine) },
+                        enabled = !v2.busy && bible.targetEngine != engine
+                    ) {
+                        Text(engine.name)
+                    }
                 }
             }
             OutlinedTextField(

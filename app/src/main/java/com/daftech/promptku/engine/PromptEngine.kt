@@ -25,7 +25,12 @@ object PromptEngine {
     // (batas mengikatnya karakter, bukan kata — S17 Kaito 1.453 karakter
     // sudah lewat batas). Batas aman 1.300; kelebihan dipangkas dari
     // boilerplate (material/kontinuitas/gestur), bukan dari konten.
-    const val FLOW_CHAR_CAP: Int = 1300
+    // v2.2 — 1.300 -> 2.000: tidak ada batas karakter resmi Flow yang
+    // ditemukan (riset detail-vs-panjang 18 Nov 2026); 1.300 berasal dari
+    // laporan pihak ketiga (~1.400 karakter). Cap kata Flow kini 300, jadi
+    // cap karakter ikut naik: 300 kata x ~6,5 karakter/kata ~= 1.950 ->
+    // 2.000. Validasi lapangan: film Flow pertama pasca-v2.2.
+    const val FLOW_CHAR_CAP: Int = 2000
 
     // Kunci positif Kling / Seedance — kedua engine ini tidak memakai field negative.
     const val POSITIVE_LOCK_SHORT: String =

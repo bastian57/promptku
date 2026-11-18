@@ -58,7 +58,13 @@ class PromptCoreTest {
 
     @Test
     fun longDnaWithoutCardStillTrimsWithReport() {
-        val prompt = PromptEngine.build(rikoInput(withCard = false))
+        // v2.2 — DNA 122 kata kini muat utuh di bawah cap Flow 300 (dulu
+        // 180, terukur 228 kata tanpa trim). Jalur trim tetap diuji dengan
+        // DNA digandakan (244 kata > anggaran DNA ~191 kata).
+        val doubled = longDna() + " " + longDna()
+        val prompt = PromptEngine.build(
+            rikoInput(withCard = false).copy(character = CharacterDna("Riko", doubled))
+        )
         assertTrue(prompt.warnings.any { it.contains("dipangkas") })
         assertTrue(prompt.text.contains("tire repair shop"))
     }

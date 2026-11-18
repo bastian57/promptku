@@ -128,12 +128,18 @@ class V2Fix6RisetTest {
 
     @Test
     fun flowPromptStaysWithinCharCapIncludingAspect() {
-        // Kata-kata cukup panjang sehingga cap KATA (180) lolos tapi cap
-        // KARAKTER (1.300 - 22 aspek = 1.278) harus memangkas.
+        // v2.2 — cap Flow: kata 180 -> 300, karakter 1.300 -> 2.000.
+        // Kata-kata cukup panjang sehingga cap KATA efektif (300 - 3 aspek
+        // = 297) lolos (terukur 280 kata) dan cap KARAKTER efektif
+        // (2.000 - 22 aspek = 1.978) ditegakkan (terukur 1.970 karakter).
+        // Catatan jujur: dengan cap baru, trim kata biasanya mengikat
+        // duluan di input yang lebih panjang (kalimat 13-18 kata membuat
+        // trim kata mendarat di ~1.900 karakter) — kasus ini menguji
+        // batasnya di titik nyaris-cap, bukan jalur trim-karakter murni.
         val longAction = ("Bima hurls a blazing plasma wave across the stormy chasm, " +
-            "lightning crackling around his gauntlets as thunder echoes. ").repeat(3)
+            "lightning crackling around his gauntlets as thunder echoes. ").repeat(5)
         val longWorld = ("Floating volcanic islands drift through churning purple " +
-            "thunderclouds while ancient stone temples crumble. ").repeat(3)
+            "thunderclouds while ancient stone temples crumble. ").repeat(5)
         val input = baseInput(TargetEngine.FLOW).copy(
             actionEn = longAction.trim(),
             world = WorldLock("Bayangan Langit", longWorld.trim()),
@@ -146,10 +152,19 @@ class V2Fix6RisetTest {
             )
         )
         val prompt = PromptEngine.build(input)
-        assertTrue("length=${prompt.text.length}", prompt.text.length <= 1278)
+        assertTrue("length=${prompt.text.length}", prompt.text.length <= 1978)
         assertTrue(prompt.text, prompt.text.contains("Bima says: My turn!"))
         assertTrue(prompt.text, prompt.text.contains("plasma"))
         assertFalse(prompt.text, prompt.text.contains(".."))
+        // Input yang melampaui kedua cap tetap kembali di bawah batas karakter.
+        val overInput = input.copy(
+            actionEn = longAction.repeat(2).trim(),
+            world = WorldLock("Bayangan Langit", longWorld.repeat(2).trim())
+        )
+        val overPrompt = PromptEngine.build(overInput)
+        assertTrue("length=${overPrompt.text.length}", overPrompt.text.length <= 1978)
+        assertTrue(overPrompt.text, overPrompt.text.contains("Bima says: My turn!"))
+        assertTrue(overPrompt.text, overPrompt.text.contains("plasma"))
     }
 
     // --- Mode B: dialog + fit-trim ---
@@ -208,13 +223,14 @@ class V2Fix6RisetTest {
     @Test
     fun modeBFitTrimKeepsWorldAndDialogue() {
         // Mode B dulu TIDAK PUNYA trim (S17 Kaito 1.453 karakter / 211 kata
-        // lolos). Aksi 180 kata dipotong ekornya; dunia + dialog utuh.
+        // lolos). v2.2 — aksi 300 kata (repeat 20) dipotong ekornya ke cap
+        // Flow 300 kata / 2.000 karakter; dunia + dialog utuh.
         val action = ("Kaito hurls a blazing plasma wave at Golden Frieza, the energy " +
-            "crackling through the storm. ").repeat(12).trim()
+            "crackling through the storm. ").repeat(20).trim()
         val p = plan(1, action, dialogueEn = "My turn!")
         val text = ModeRender.renderReference(bible(), p, ModeRender.effectiveShot(p), TargetEngine.FLOW, imageCount = 3)
-        assertTrue("words=${MythFilter.countWords(text)}", MythFilter.countWords(text) <= 180)
-        assertTrue("chars=${text.length}", text.length <= 1300)
+        assertTrue("words=${MythFilter.countWords(text)}", MythFilter.countWords(text) <= 300)
+        assertTrue("chars=${text.length}", text.length <= 2000)
         assertTrue(text, text.contains("Lightning splits the bruised sky"))
         assertTrue(text, text.contains("Kaito says: My turn!"))
         assertTrue(text, text.contains("Kaito hurls a blazing plasma wave"))

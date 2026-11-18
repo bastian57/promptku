@@ -42,12 +42,16 @@ fun V2PromptScreen(v2: V2ViewModel) {
     BackHandler { v2.updateStep(V2Step.IDEA) }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var engineIndex by remember { mutableIntStateOf(0) }
-    var exportAll by remember { mutableStateOf(false) }
     // Urutan chip mengikuti export lama (Flow/Kling/Seedance/WanGP).
+    // v2.2 — daftar engine di atas engineIndex: remember keyed ke
+    // bible.targetEngine butuh engines saat inisialisasi.
     val engines = listOf(
         TargetEngine.FLOW, TargetEngine.KLING, TargetEngine.SEEDANCE, TargetEngine.WAN
     )
+    var engineIndex by remember(v2.bible?.targetEngine) {
+        mutableIntStateOf(engines.indexOf(v2.bible?.targetEngine ?: TargetEngine.FLOW).coerceAtLeast(0))
+    }
+    var exportAll by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)

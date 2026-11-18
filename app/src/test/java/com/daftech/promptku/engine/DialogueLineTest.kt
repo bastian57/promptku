@@ -126,7 +126,10 @@ class DialogueLineTest {
     @Test
     fun scoreV4FlagsTrimmedPrompt() {
         // DNA panjang tanpa kartu = prompt terpotong -> trim_report + slot_budget gagal.
-        val dna = DnaBudgetTest.RIKO_DNA_LONG
+        // v2.2 — DNA 129 kata kini muat utuh di bawah cap Flow 300 (terukur
+        // 224 kata, tanpa trim). Jalur flag tetap diuji dengan DNA digandakan
+        // (258 kata -> dipangkas ke 204 kata, kedua item gagal).
+        val dna = DnaBudgetTest.RIKO_DNA_LONG + " " + DnaBudgetTest.RIKO_DNA_LONG
         val input = ShotInput(
             engine = TargetEngine.FLOW,
             character = CharacterDna("Riko", dna),

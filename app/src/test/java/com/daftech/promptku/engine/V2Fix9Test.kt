@@ -201,18 +201,19 @@ class V2Fix9Test {
 
     @Test
     fun longActionTrimKeepsFragmentWhole() {
-        // Aksi inti 198 kata + fragmen fight_impact: trim Mode B harus
-        // memotong ekor INTI saja — fragmen utuh sampai kata terakhirnya
-        // ("dust bursting from the ground"), total tetap <= 180 kata.
+        // v2.2 — aksi inti 315 kata + fragmen fight_impact: trim Mode B
+        // harus memotong ekor INTI saja — fragmen utuh sampai kata
+        // terakhirnya ("dust bursting from the ground"), total tetap
+        // <= 300 kata (cap Flow baru; dulu 198 kata / cap 180).
         val bible = aangBible()
-        val longAction = ("Aang lunges forward with blazing fists and burning rage ".repeat(22)).trim()
-        assertTrue(MythFilter.countWords(longAction) > 180)
+        val longAction = ("Aang lunges forward with blazing fists and burning rage ".repeat(35)).trim()
+        assertTrue(MythFilter.countWords(longAction) > 300)
         val plan = aangPlan(4, longAction).copy(effectId = "fight_impact")
         val shot = ModeRender.effectiveShot(plan)
         val text = ModeRender.renderReference(bible, plan, shot, TargetEngine.FLOW, 3)
         assertTrue(text, text.contains("dust bursting from the ground"))
         assertTrue(text, text.contains("the blow lands — the motion ramps into slow motion for a heartbeat"))
-        assertTrue("kata=${MythFilter.countWords(text)}", MythFilter.countWords(text) <= 180)
+        assertTrue("kata=${MythFilter.countWords(text)}", MythFilter.countWords(text) <= 300)
     }
 
     // ---------- fix9-5: dialog "!" / "?" tanpa titik tambahan ----------

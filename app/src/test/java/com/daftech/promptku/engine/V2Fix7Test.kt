@@ -283,14 +283,21 @@ class V2Fix7Test {
     fun modeBTrimBacksOffToPhraseBoundary() {
         // Replay kasus lapangan: trim mundur ke koma terakhir ("wind,")
         // lalu join ", then " menutupi bekas potongan — bukan "the the".
+        // v2.2 — titik potong pindah dengan cap Flow 300 (keep ~150 kata,
+        // bukan ~30): batas "wind," digeser ke dekat titik potong baru
+        // dengan filler 122 kata DI DEPAN inti, supaya guard 8 kata tetap
+        // menguji back-off yang sama.
         val bible = fieldBible()
-        val plan = fieldS3Plan(aangS3Core)
+        val fillerA = "Aang presses forward through the storm, fists blazing in the wind, driving the Emperor back. "
+        val fillerB = "Aang presses forward, fists blazing in the wind, driving the Emperor back across the frozen ground. "
+        val plan = fieldS3Plan(fillerA.repeat(6) + fillerB.repeat(2) + aangS3Core)
         val shot = ModeRender.effectiveShot(plan)
         val rendered = ModeRender.renderReference(bible, plan, shot, TargetEngine.FLOW, 3)
         assertTrue(rendered.contains("scorching wind, then the blow lands"))
         assertFalse(rendered.contains("the the"))
         assertFalse(rendered.contains("as the, then"))
-        assertTrue(MythFilter.countWords(rendered) <= 180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 296 kata).
+        assertTrue(MythFilter.countWords(rendered) <= 300)
     }
 
     @Test
@@ -305,7 +312,8 @@ class V2Fix7Test {
         val rendered = ModeRender.renderReference(bible, plan, shot, TargetEngine.FLOW, 3)
         assertFalse(rendered.contains("the the"))
         assertTrue(rendered.contains("dust bursting from the ground"))
-        assertTrue(MythFilter.countWords(rendered) <= 180)
+        // v2.2 — cap Flow 180 -> 300.
+        assertTrue(MythFilter.countWords(rendered) <= 300)
         val beforeThen = rendered.substringBefore(", then").trim()
             .split(Regex("\\s+")).last()
         assertFalse(

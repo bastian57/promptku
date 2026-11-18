@@ -80,14 +80,16 @@ class V2Pipeline(
         aspectRatio: String = "9:16",
         dialogueLang: String = "ID",
         genreHint: Genre? = null,
-        continuationOf: StoryBible? = null
+        continuationOf: StoryBible? = null,
+        // v2.2 — engine tujuan pilihan user (default Flow).
+        targetEngine: TargetEngine = TargetEngine.FLOW
     ): Pair<StoryBible?, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
             buildPrompt = {
                 DirectorPrompts.directorUser(
                     idea, durationMinutes, vision, isCourierHint,
-                    aspectRatio, dialogueLang, genreHint, continuationOf
+                    aspectRatio, dialogueLang, genreHint, continuationOf, targetEngine
                 )
             }
         )
@@ -99,6 +101,7 @@ class V2Pipeline(
                     isCourier = isCourierHint,
                     aspectRatio = aspectRatio,
                     dialogueLang = dialogueLang,
+                    targetEngine = targetEngine,
                     genre = genreHint ?: parsed.genre,
                     episodeNumber = (continuationOf?.episodeNumber ?: 0) + 1
                 )
@@ -128,6 +131,7 @@ class V2Pipeline(
                     isCourier = bible.isCourier,
                     aspectRatio = bible.aspectRatio,
                     dialogueLang = bible.dialogueLang,
+                    targetEngine = bible.targetEngine,
                     genre = bible.genre,
                     episodeNumber = bible.episodeNumber
                 )
@@ -156,12 +160,15 @@ class V2Pipeline(
         ledger: ArcLedger = ArcLedger.EMPTY,
         // v2.1 fix7 — mode diteruskan ke prompter (aturan penampilan
         // Mode B). Default TEXT_ONLY untuk pemanggil lama/tes lama.
-        mode: V2Mode = V2Mode.TEXT_ONLY
+        mode: V2Mode = V2Mode.TEXT_ONLY,
+        // v2.2 — engine tujuan diteruskan ke prompter (aturan panjang +
+        // audio per engine). Default FLOW untuk pemanggil lama/tes lama.
+        engine: TargetEngine = TargetEngine.FLOW
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val result = callChain(
             chain = V2Provider.directorChain(),
             buildPrompt = {
-                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons, ledger, mode)
+                DirectorPrompts.prompterUser(bible, sceneNumbers, previousExit, retryReasons, ledger, mode, engine)
             }
         )
         return when (result) {
@@ -196,6 +203,8 @@ class V2Pipeline(
         // v2.1 fix7 — mode diteruskan ke prompter (aturan penampilan
         // Mode B). Default TEXT_ONLY untuk pemanggil lama/tes lama.
         mode: V2Mode = V2Mode.TEXT_ONLY,
+        // v2.2 — engine tujuan diteruskan ke prompter. Default FLOW.
+        engine: TargetEngine = TargetEngine.FLOW,
         onBatch: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
         val all = mutableListOf<V2ScenePlan>()
@@ -207,7 +216,7 @@ class V2Pipeline(
         var previousExit = "Opening: ${bible.beats.firstOrNull()?.summaryEn.orEmpty()}"
         var ledger = ArcLedger.EMPTY
         for ((index, batch) in batches.withIndex()) {
-            val (plans, fail) = buildPromptBatch(bible, batch, previousExit, ledger = ledger, mode = mode)
+            val (plans, fail) = buildPromptBatch(bible, batch, previousExit, ledger = ledger, mode = mode, engine = engine)
             if (fail != null) return all to fail
             all.addAll(plans)
             ledger = ArcLedger.fromPlans(all, bible)

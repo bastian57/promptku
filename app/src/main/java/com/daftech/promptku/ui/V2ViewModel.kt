@@ -135,6 +135,9 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var genreHint by mutableStateOf<Genre?>(null)
         private set
+    // v2.2 — engine tujuan pilihan user di Layar Ide (default Flow).
+    var targetEngine by mutableStateOf(TargetEngine.FLOW)
+        private set
     // v2.1 — Bank Tokoh DNA (Room v2_dna) + pilihan Hero/Antagonis.
     var dnaCharacters by mutableStateOf<List<V2DnaItem>>(emptyList())
         private set
@@ -162,6 +165,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
     fun updateAspectRatio(value: String) { aspectRatio = if (value == "16:9") "16:9" else "9:16" }
     fun updateDialogueLang(value: String) { dialogueLang = if (value == "EN") "EN" else "ID" }
     fun updateGenreHint(value: Genre?) { genreHint = value }
+    fun updateTargetEngine(value: TargetEngine) { targetEngine = value }
 
     private fun today(): String =
         SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -405,7 +409,8 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 val (result, fail) = withContext(Dispatchers.IO) {
                     pipeline().developStory(
                         trimmed, durationMinutes, vision, hint,
-                        aspectRatio, dialogueLang, genreHint, continuation
+                        aspectRatio, dialogueLang, genreHint, continuation,
+                        targetEngine
                     )
                 }
                 if (fail != null) {
@@ -481,7 +486,8 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     isCourier = ScriptPools.isCourierStory(trimmedIdea),
                     sourceIdea = trimmedIdea,
                     aspectRatio = aspectRatio,
-                    dialogueLang = dialogueLang
+                    dialogueLang = dialogueLang,
+                    targetEngine = targetEngine
                 )
                 val plans = draft.scenes.map { scene ->
                     V2ScenePlan(
@@ -579,6 +585,13 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         persistBibleEdits()
     }
 
+    // v2.2 — ganti engine tujuan dari Layar Cerita (tanpa regenerasi:
+    // prompter berikutnya yang pakai engine baru; render ulang gratis).
+    fun updateTargetEngineChip(value: TargetEngine) {
+        bible = bible?.copy(targetEngine = value)
+        persistBibleEdits()
+    }
+
     fun updateWorldName(value: String) {
         bible = bible?.copy(worldName = value)
         persistBibleEdits()
@@ -658,7 +671,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         // 15 menit, bukan 10 — run free-tier yang lambat tapi
                         // jalan (5 batch + retry) wajar sampai ~11 menit.
                         withTimeout(900_000L) {
-                            pipeline().buildPrompts(current, mode) { done, total ->
+                            pipeline().buildPrompts(current, mode, current.targetEngine) { done, total ->
                                 // Callback dipanggil dari thread IO — lempar
                                 // ke Main (tulis state Compose dari IO crash).
                                 viewModelScope.launch(Dispatchers.Main) {
@@ -717,7 +730,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     val (retryPlans, _) = withContext(Dispatchers.IO) {
                         try {
                             withTimeout(300_000L) {
-                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons, retryLedger, mode)
+                                pipeline().buildPromptBatch(current, failedNums.sorted(), prevExit, retryReasons, retryLedger, mode, current.targetEngine)
                             }
                         } catch (e: TimeoutCancellationException) {
                             // Retry nyangkut: pakai hasil pertama, jangan hang.
@@ -828,7 +841,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 val (newPlans, fail) = withContext(Dispatchers.IO) {
                     try {
                         withTimeout(300_000L) {
-                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons, regenLedger, mode)
+                            pipeline().buildPromptBatch(current, listOf(sceneNumber), previousExit, retryReasons, regenLedger, mode, current.targetEngine)
                         }
                     } catch (e: TimeoutCancellationException) {
                         emptyList<V2ScenePlan>() to V2Call.Fail(

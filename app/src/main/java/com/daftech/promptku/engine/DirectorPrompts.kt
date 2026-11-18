@@ -42,7 +42,9 @@ object DirectorPrompts {
         aspectRatio: String = "9:16",
         dialogueLang: String = "ID",
         genreHint: Genre? = null,
-        continuationOf: StoryBible? = null
+        continuationOf: StoryBible? = null,
+        // v2.2 — engine tujuan pilihan user (default Flow).
+        targetEngine: TargetEngine = TargetEngine.FLOW
     ): String {
         val visionBlock = if (vision.isEmpty()) {
             "No reference images. Invent the hero and world from the idea, with concrete visual anchors."
@@ -63,6 +65,9 @@ object DirectorPrompts {
                 if (dialogueLang == "EN") "Dialogue language: English — dialogue_en is the primary line, dialogue_id its Indonesian translation.\n"
                 else "Dialogue language: Indonesian — dialogue_id is the primary line, dialogue_en its English translation.\n"
             )
+            // v2.2 — engine tujuan (konteks saja; dunia/beat tetap
+            // engine-agnostic, yang mengikat engine adalah prompter).
+            append("Target engine (user's choice): ${targetEngine.labelId}.\n")
         }
         val continuationBlock = if (continuationOf == null) "" else {
             val prev = continuationOf
@@ -260,7 +265,9 @@ object DirectorPrompts {
         ledger: ArcLedger = ArcLedger.EMPTY,
         // v2.1 fix7 — mode (default TEXT_ONLY untuk pemanggil lama):
         // aturan penampilan Mode B cuma berlaku kalau ada gambar.
-        mode: V2Mode = V2Mode.TEXT_ONLY
+        mode: V2Mode = V2Mode.TEXT_ONLY,
+        // v2.2 — engine tujuan (default FLOW untuk pemanggil lama/tes lama).
+        engine: TargetEngine = TargetEngine.FLOW
     ): String {
         val hero = bible.hero
         val heroBlock = if (hero == null) "No hero defined."
@@ -331,6 +338,10 @@ object DirectorPrompts {
                 "scene, including the closing scene — a tunic rippling in the breeze or a sash " +
                 "catching the light is still appearance description, not action. "
         } else ""
+        // v2.2 — aturan per engine dari profil (Models.EnginePromptProfile):
+        // target panjang action_en + aturan audio. Ditempel ke Rules setelah
+        // aturan bahasa dialog.
+        val engineRule = EnginePromptProfile.forEngine(engine).ruleText()
         return "Story bible:\n" +
             "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
             "$heroBlock\n$antagonistBlock\n" +
@@ -369,6 +380,7 @@ object DirectorPrompts {
             "written FIRST in $langName ($langField is the primary line); $otherField is its " +
             "translation of the SAME line. Fill BOTH fields whenever a scene has dialogue; never " +
             "leave the $langName field empty while the translation is filled; " +
+            engineRule +
             "action_en = ONE action only — for FIGHT scenes, the ONE action is a rapid flurry: " +
             "2–3 fast moves in one continuous flow, without pause (jab, cross, spinning kick — " +
             // v2.1 fix12 — "not three separate beats" dihapus: micro-beat

@@ -30,13 +30,76 @@ enum class VisualStyle(val labelId: String) {
 
 // Empat engine tujuan v1 — output TEKS saja, app tidak generate video.
 enum class TargetEngine(val labelId: String, val maxWords: Int, val minWords: Int) {
-    // v2.1 fix6 (riset) — FLOW 200 -> 180: 180 adalah batas DESAIN (dokumen
-    // v3 + target kata lapangan), 200 di kode adalah cap yang tidak pernah
-    // jadi sumber kebenaran. Meter mengikuti engine.maxWords otomatis.
-    FLOW("Flow / Veo", 180, 40),
-    WAN("WanGP", 120, 40),
+    // v2.2 — cap riset detail-vs-panjang (18 Nov 2026, sumber resmi):
+    // FLOW 180 -> 300 (contoh resmi DeepMind ~470 kata/8 dtk; kasus Wushu
+    // 900 kata jalan di Flow; tidak ada batas resmi Flow yang ditemukan).
+    // SEEDANCE 100 -> 250 (anjuran resmi <=1.000 kata; yang dibatasi adalah
+    // jumlah beat, bukan kata). WAN 120 -> 200 (profil WanGP LOKAL — cap 800
+    // karakter API hosted tidak berlaku lokal; rewriter resmi Wan 60-200
+    // kata). KLING TETAP 100 (blog resmi Kling: >150 kata cenderung
+    // memburuk; target resmi 50-100 kata).
+    FLOW("Flow / Veo", 300, 40),
+    WAN("WanGP", 200, 40),
     KLING("Kling", 100, 60),
-    SEEDANCE("Seedance", 100, 60)
+    SEEDANCE("Seedance", 250, 60)
+}
+
+/**
+ * v2.2 — profil prompt per engine (DATA, bukan cabang if di prompter).
+ * Angka actionEn DITURUNKAN dari overhead renderer (diukur dari film Clash
+ * 18 Nov 2026, Mode B): total render = inti + sisanya (fragmen + dunia +
+ * cahaya + kamera + audio + aspek + framing). Overhead tengah: Flow ~117,
+ * Kling ~97, Seedance ~114, Wan ~53 kata. Target inti = cap - overhead,
+ * dibulatkan ke bawah; "standar" = scene biasa, "maks" = langit-langit
+ * adegan aksi kompleks (Mode B micro-beat, maks 3 beat — sudah perilaku
+ * fix12). Kling: overhead ~97 dari cap 100 -> inti hampir tidak punya
+ * ruang; instruksinya memang "sependek mungkin, satu gerakan".
+ */
+data class EnginePromptProfile(
+    val engine: TargetEngine,
+    /** Kata target action_en di scene biasa. */
+    val actionWordsStandard: Int,
+    /** Langit-langit action_en untuk adegan aksi kompleks. */
+    val actionWordsMax: Int,
+    /** Aturan audio_en khusus engine ini ("" = tidak ada aturan khusus). */
+    val audioRule: String
+) {
+    /**
+     * Kalimat instruksi untuk prompter (satu blok, ditempel ke Rules).
+     * Menyebut angka TOTAL scene (cap engine) DAN angka action_en — LLM
+     * hanya mengontrol action_en; renderer menempel sisanya di sekitarnya.
+     * Wording dijaga bebas dari frasa yang dites di V2Fix10Test /
+     * V2Fix12Test ("timestamped micro-beats", "slow motion", frasa fragmen
+     * fight_hero_hurt) supaya aturan ini tidak memecahkan tes lama.
+     */
+    fun ruleText(): String = when (engine) {
+        TargetEngine.FLOW -> "TARGET ENGINE: Flow / Veo. Total scene budget 300 words. Write " +
+            "action_en full and detailed: about 50 words for a normal scene, up to 150 words " +
+            "for a complex fight scene (several fast moves in one continuous flow). Every word " +
+            "must change what the camera sees — no filler adjectives. "
+        TargetEngine.KLING -> "TARGET ENGINE: Kling. Total scene budget 100 words — the tightest " +
+            "of all engines. Write action_en as SHORT as possible: one clear move, about 20 " +
+            "words. Anything longer will be trimmed by the app, cutting the action itself. "
+        TargetEngine.SEEDANCE -> "TARGET ENGINE: Seedance. Total scene budget 250 words. Write " +
+            "action_en about 60 words for a normal scene, up to 120 words for a complex scene, " +
+            "with at most 3 timecoded beats per 10-second scene — never more beats than that. "
+        TargetEngine.WAN -> "TARGET ENGINE: WanGP (local). Total scene budget 200 words. Write " +
+            "action_en about 60 words for a normal scene, up to 120 words for a complex scene. " +
+            "Keep audio_en very short or empty — WanGP generates silent video, so audio words " +
+            "only eat the budget. "
+    }
+
+    companion object {
+        fun forEngine(engine: TargetEngine): EnginePromptProfile = when (engine) {
+            TargetEngine.FLOW -> EnginePromptProfile(engine, 50, 150, "")
+            TargetEngine.KLING -> EnginePromptProfile(engine, 20, 25, "")
+            TargetEngine.SEEDANCE -> EnginePromptProfile(engine, 60, 120, "")
+            TargetEngine.WAN -> EnginePromptProfile(
+                engine, 60, 120,
+                "Keep audio_en very short or empty — WanGP generates silent video."
+            )
+        }
+    }
 }
 
 enum class ShotSize(val labelId: String, val phraseEn: String) {

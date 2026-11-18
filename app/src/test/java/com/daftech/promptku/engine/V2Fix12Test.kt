@@ -138,14 +138,20 @@ class V2Fix12Test {
         // Replay Peak of Destiny S3: trim lama (fix7) memotong keras di
         // "face" (batas ", " 13 kata ke belakang, lewat guard 8 kata);
         // trim fix12 mundur ke " while " — inti berakhir kalimat utuh.
+        // v2.2 — titik potong pindah dengan cap Flow 300 (keep ~145 kata,
+        // bukan ~25): batas " while " digeser ke dekat titik potong baru
+        // dengan filler 120 kata DI DEPAN inti verbatim, supaya guard 8
+        // kata tetap menguji back-off yang sama (bukan potongan ekor).
         val bible = fieldBible()
-        val plan = fieldS3Plan(peakS3LongCore, fieldS3Audio)
+        val fillerA = "Aang presses forward through the storm, fists blazing in the wind, driving the Emperor back. "
+        val plan = fieldS3Plan(fillerA.repeat(8) + peakS3LongCore, fieldS3Audio)
         val shot = ModeRender.effectiveShot(plan)
         val rendered = ModeRender.renderReference(bible, plan, shot, TargetEngine.FLOW, 3)
         assertTrue(rendered.contains("into the freezing air, then the blow lands"))
         assertFalse(rendered.contains("while the tyrant's face"))
         assertFalse(rendered.contains("the the"))
-        assertTrue(MythFilter.countWords(rendered) <= 180)
+        // v2.2 — cap Flow 180 -> 300 (terukur 296 kata).
+        assertTrue(MythFilter.countWords(rendered) <= 300)
     }
 
     // ---------- fix12-2: gramatika Wushu ----------
