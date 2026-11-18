@@ -82,7 +82,12 @@ enum class CameraMove(val labelId: String, val phraseEn: String) {
     // HANDHELD_SHAKE = goyang mengejar aksi (bukan "subtle sway").
     WHIP_PAN("Whip Pan (cepat)", "whip pan, fast motion blur, snapping across the action"),
     PUSH_IN("Push-In Cepat", "fast push-in to close-up on the face"),
-    HANDHELD_SHAKE("Handheld Goyang", "handheld camera, urgent shake, chasing the action")
+    HANDHELD_SHAKE("Handheld Goyang", "handheld camera, urgent shake, chasing the action"),
+    // v2.1 fix12 — PROJECTILE POV (master prompt Wushu): kamera sempat
+    // ngikutin proyektilnya (fireball / bola es) — opsi camera_move baru
+    // buat scene yang proyektilnya jadi bintang; parser di
+    // ModeRender.cameraMoveFromString kenal "projectile" / "pov".
+    PROJECTILE_POV("Projectile POV", "projectile POV, following the projectile")
 }
 
 enum class LightKind(val labelId: String, val phraseEn: String) {

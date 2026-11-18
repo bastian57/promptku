@@ -129,7 +129,10 @@ object DirectorPrompts {
         beat: BeatRange,
         beatMap: List<BeatRange>,
         ledger: ArcLedger,
-        fightRoles: Map<Int, FightRole> = emptyMap()
+        fightRoles: Map<Int, FightRole> = emptyMap(),
+        // v2.1 fix12 — mode diteruskan ke fightPacingText (micro-beat
+        // bertimecode cuma Mode B).
+        mode: V2Mode = V2Mode.TEXT_ONLY
     ): String {
         val total = beatMap.last().lastScene
         val role = BeatMap.roleOf(beat.beatIndex, bible.beats)
@@ -194,7 +197,7 @@ object DirectorPrompts {
         } else {
             "This is the last beat — end the film here."
         }
-        val fightSection = fightPacingText(bible, beat, fightRoles)
+        val fightSection = fightPacingText(bible, beat, fightRoles, mode)
         val middle = if (fightSection.isBlank()) "" else "\n$fightSection"
         return "$head\n$body$middle\n$state\n$nextLine"
     }
@@ -206,7 +209,12 @@ object DirectorPrompts {
     private fun fightPacingText(
         bible: StoryBible,
         beat: BeatRange,
-        fightRoles: Map<Int, FightRole>
+        fightRoles: Map<Int, FightRole>,
+        // v2.1 fix12 — mode (default TEXT_ONLY): micro-beat bertimecode
+        // cuma untuk Mode B — Mode A sudah ditimestamp renderer
+        // ([00:00-00:04] / [00:04-00:08]); timecode di actionEn Mode A
+        // bakal dobel dengan marker segmen renderer.
+        mode: V2Mode = V2Mode.TEXT_ONLY
     ): String {
         val inBeat = (beat.firstScene..beat.lastScene)
             .mapNotNull { s -> fightRoles[s]?.let { s to it } }
@@ -215,7 +223,16 @@ object DirectorPrompts {
         val villain = bible.antagonistName.ifBlank { "the antagonist" }
         val lines = inBeat.joinToString(" ") { (scene, role) ->
             when (role) {
-                FightRole.EXCHANGE -> "Scene $scene = EXCHANGE: start ALREADY mid-exchange — the first verb is a strike, no approach, no shouting, no stance. 2–3 fast moves in one continuous flow, each blow with its consequence in the same clause (ice cracks, snow explodes, armor shards). NEVER write that the hero \"snaps back\" for a counter-attack — write that he \"answers\" or \"drives\" it. End the action on the final impact, hero on his feet, fists raised — never end on a recovery or kneeling pose."
+                FightRole.EXCHANGE -> {
+                    // v2.1 fix12 — gramatika Wushu (master prompt Seedance
+                    // yang Putra pakai di Flow, video 10 dtk 18 Nov 2026):
+                    // micro-beat bertimecode + never-stop-moving + aerial
+                    // continuity. Timecode cuma Mode B (lihat param mode).
+                    val microBeats = if (mode == V2Mode.REFERENCE) {
+                        " Write the action as timestamped micro-beats covering the full 10 seconds, e.g. [00:00-00:03] ... [00:03-00:06] ... [00:06-00:10] ..., one fast move per beat, each with its consequence in the same clause."
+                    } else ""
+                    "Scene $scene = EXCHANGE: start ALREADY mid-exchange — the first verb is a strike, no approach, no shouting, no stance. 2–3 fast moves in one continuous flow, each blow with its consequence in the same clause (ice cracks, snow explodes, armor shards).$microBeats NEVER stop moving — every defense is a movement: dodge, spin, parry, jump, counterattack, never a standing block, never a static cast, never a pose between attacks. If a fighter leaves the ground, he stays airborne until the beat ends — he recovers in the air, he does not land between moves. NEVER write that the hero \"snaps back\" for a counter-attack — write that he \"answers\" or \"drives\" it. End the action on the final impact, hero on his feet, fists raised — never end on a recovery or kneeling pose."
+                }
                 FightRole.TENSION -> "Scene $scene = TENSION: NO contact — circling, staring, breathing, dust settling; the pause that makes the next burst feel faster."
                 FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands a heavy blow on $villain — time dilates into a held heartbeat as the blow connects, $villain's face twisting in shock, then the world snaps back to full speed. Do NOT write the words \"slow motion\" in action_en — the app adds the slow-motion moment at render; write the blow and the face. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
                 FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero stumbles backward, reeling from the hit, clutching his side, then his jaw sets and he rises."
@@ -263,7 +280,7 @@ object DirectorPrompts {
             .map { BeatMap.beatForScene(it, beatMap) }
             .distinctBy { it.beatIndex }
         val beatBlock = beatsInBatch.joinToString("\n") { beat ->
-            beatBlockText(bible, beat, beatMap, ledger, fightRoles)
+            beatBlockText(bible, beat, beatMap, ledger, fightRoles, mode)
         }
         val retryBlock = if (retryReasons.isEmpty()) "" else
             "RETRY — the following scenes failed validation. Fix EXACTLY these problems, " +
@@ -288,6 +305,12 @@ object DirectorPrompts {
                 "NEVER write \"slow motion\", \"time freezes\", or \"freezes for a heartbeat\" in any other scene's action_en. " +
                 "Start every fight scene ALREADY mid-motion — the first verb is a strike, never an approach, a shout, or a stance. " +
                 "Every blow names its consequence in the same clause (the block cracks the ice, snow explodes, armor shards fly). " +
+                // v2.1 fix12 — never-stop-moving (master prompt Wushu):
+                // larangan eksplisit bertahan statis + rantai defense
+                // sebagai gerakan + aerial continuity (kondisional: cuma
+                // kalau petarungnya sudah di udara — fight darat tidak
+                // dipaksa terbang).
+                "NEVER stop moving — no standing block, no static cast, no posing between attacks; every defense is a movement (dodge, spin, parry, jump, counterattack, aerial movement, parry again). If a fighter leaves the ground, he stays airborne until the beat ends — he recovers in the air, he does not land between moves. " +
                 "For a counter-attack, NEVER write that the hero \"snaps back\" — the model reads it as recoil; write that he \"answers\" or \"drives\" the counter. " +
                 "End every fight scene on the final impact, hero on his feet — never trail off into a recovery or kneeling pose (unless the beat is HERO_HURT). " +
                 "Camera follows the fastest object — chase the fists, snap-zoom with each impact — never a slow drift. " +
@@ -322,7 +345,7 @@ object DirectorPrompts {
             "Write scene plans for scene numbers ${sceneNumbers.joinToString(", ")} as a JSON ARRAY " +
             "of objects, one per scene, in order:\n" +
             "[{\"scene_number\": 1, \"action_en\": \"...\", " +
-            "\"camera_move\": \"static|slow dolly-in|slow pan left|slow pan right|tracking shot|crane up|handheld|whip pan|fast push-in\", " +
+            "\"camera_move\": \"static|slow dolly-in|slow pan left|slow pan right|tracking shot|crane up|handheld|whip pan|fast push-in|projectile pov\", " +
             "\"lens_mm\": 35, \"shot_size\": \"wide|medium|close-up|extreme close-up\", " +
             "\"angle\": \"eye|low|high|bird\", " +
             "\"dialogue_id\": \"... (Indonesian, max 8 words, or empty — PRIMARY when the user chose Indonesian)\", " +
@@ -348,8 +371,12 @@ object DirectorPrompts {
             "leave the $langName field empty while the translation is filled; " +
             "action_en = ONE action only — for FIGHT scenes, the ONE action is a rapid flurry: " +
             "2–3 fast moves in one continuous flow, without pause (jab, cross, spinning kick — " +
-            "not three separate beats), starting ALREADY mid-exchange with the first verb a strike, " +
-            "each blow with its consequence in the same clause, ending on the final impact with the " +
+            // v2.1 fix12 — "not three separate beats" dihapus: micro-beat
+            // bertimecode Mode B (blok EXCHANGE) MEMANG 2-3 beat — yang
+            // dilarang itu tiga SCENE terpisah, bukan tiga beat dalam satu
+            // flurry. Plus defense-as-movement (master prompt Wushu).
+            "one flurry, not three separate scenes), starting ALREADY mid-exchange with the first verb a strike, " +
+            "each blow with its consequence in the same clause, every defense a movement (dodge, spin, parry, jump, counterattack — never a standing block), ending on the final impact with the " +
             "hero on his feet; never paste the world description, setting, or a list " +
             "of places into action_en (the app pastes the world itself); " +
             "action_en MUST name its actor explicitly at the start (e.g. 'The Golden Demon spreads " +

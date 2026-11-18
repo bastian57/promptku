@@ -148,6 +148,7 @@ object ModeRender {
                 // "whip pan left to right" / "handheld shake").
                 t.contains("whip") -> CameraMove.WHIP_PAN
                 t.contains("push-in") || t.contains("push in") -> CameraMove.PUSH_IN
+                t.contains("projectile") -> CameraMove.PROJECTILE_POV
                 t.contains("shake") -> CameraMove.HANDHELD_SHAKE
                 t.contains("dolly") && t.contains("out") -> CameraMove.DOLLY_OUT
                 t.contains("dolly") -> CameraMove.DOLLY_IN
@@ -437,6 +438,39 @@ object ModeRender {
         )
     }
 
+    /** Batas back-off trim Mode B (v2.1 fix12): posisi TERAKHIR di [text]
+     *  tempat trim boleh memotong — potong SEBELUM batas, bukan di
+     *  tengah frasa. Selain ", " dan " and " (fix7), tambah batas klausa
+     *  bawahan " while "/" as " dan marker beat "[00:" — audit Peak of
+     *  Destiny S3: inti kepotong jadi "...while the tyrant's face"
+     *  karena batas ", " terakhir 13 kata ke belakang, lewat guard 8
+     *  kata. "while"/"as" cuma dihitung kalau diikuti artikel /
+     *  pronomen / nama diri (awal klausa bawahan: "while the tyrant's
+     *  face", "as the wind howls") — BUKAN komparasi ("as fast as
+     *  lightning": potong di situ malah ninggalin "as fast" yang
+     *  menggantung) atau frasa durasi ("wait a while longer").
+     *  Kalau batas terakhir yang bagus ternyata komparasi/durasi,
+     *  fungsi ini tidak mencari kemunculan sebelumnya — false negative
+     *  (perilaku lama) lebih aman daripada false positive. */
+    fun clauseBoundaryAt(text: String): Int {
+        var at = maxOf(text.lastIndexOf(", "), text.lastIndexOf(" and "))
+        for (word in listOf(" while ", " as ")) {
+            val idx = text.lastIndexOf(word)
+            if (idx > at) {
+                val after = text.substring(idx + word.length).trimStart()
+                    .substringBefore(" ").trimEnd(',', '.', ';', ':')
+                val startsClause = after.lowercase() in setOf(
+                    "the", "his", "her", "its", "a", "an", "he", "she",
+                    "it", "they", "this", "that"
+                ) || after.firstOrNull()?.isUpperCase() == true
+                if (startsClause) at = idx
+            }
+        }
+        val beatAt = text.lastIndexOf("[00:")
+        if (beatAt > at) at = beatAt
+        return at
+    }
+
     /** Mode B: teks penunjuk gambar per engine (template lokal).
      *  v2.1 fix6 — daftar referensi dibangun sebagai SATU list ("for A, B, C"),
      *  bukan tempelan ", X" + " and, X" (itu sumber "Frieza, Frieza" 54x dan
@@ -577,8 +611,12 @@ object ModeRender {
             // lebih dari 8 kata (kalau batasnya jauh, potongan kata lebih
             // berharga daripada kerapian). Dedupe sambungan ditangani
             // joinActionWithFragment di bawah.
+            // v2.1 fix12 — batasnya ditambah klausa bawahan " while "/" as "
+            // dan marker beat "[00:" (lihat clauseBoundaryAt): Peak of
+            // Destiny S3 menggantung "...while the tyrant's face" karena
+            // batas ", " terakhir 13 kata ke belakang.
             val keptText = coreWords.take(keep).joinToString(" ")
-            val boundaryAt = maxOf(keptText.lastIndexOf(", "), keptText.lastIndexOf(" and "))
+            val boundaryAt = clauseBoundaryAt(keptText)
             val boundaryKeep = if (boundaryAt > 0) MythFilter.countWords(keptText.substring(0, boundaryAt)) else keep
             val finalKeep = if (boundaryKeep >= maxOf(4, keep - 8)) boundaryKeep else keep
             val trimmedCore = cleanField(coreWords.take(finalKeep).joinToString(" "))
