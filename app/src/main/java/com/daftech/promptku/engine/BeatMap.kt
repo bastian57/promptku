@@ -228,10 +228,14 @@ object ArcLexicon {
     // Dicek per KALIMAT + subjek hero (nama hero harus ada di kalimat
     // yang sama): "General Kallistos staggers back" BUKAN hero terluka —
     // itu villain yang kena pukul (IMPACT), bukan HERO_HURT.
-    val HERO_HURT_WORDS = setOf("staggers", "stumbles", "reeling", "buckling")
+    val HERO_HURT_WORDS = setOf(
+        "staggers", "stumbles", "stumbling", "staggering",
+        "reeling", "reels", "buckling", "buckles"
+    )
     val HERO_HURT_PHRASES = listOf(
         "blood on", "wipes blood", "spits blood", "knees buckling",
         "falls to one knee", "drops to one knee", "clutches his", "clutches her",
+        "clutching his", "clutching her",
         "world tilting"
     )
 
@@ -336,10 +340,35 @@ object ArcLexicon {
     /** Apakah satu match findFinality termasuk kata retrospektif. */
     fun isRetrospectiveFinality(match: String): Boolean = match in RETROSPECTIVE_FINALITY
 
+    // "puncak" sebagai kata TEMPAT (fix11, lapangan Borobudur S1:
+    // "Di puncak candi suci" = puncak CANDI (lokasi), bukan puncak
+    // pertarungan). Kata tempat yang mengikutinya: candi, kuil, gunung,
+    // bukit, menara, stupa, pura. "puncak pertempuran" / "puncak
+    // ketegangan" / "mencapai puncaknya" tetap kena — bukan kata tempat.
+    val PEAK_PLACE_WORDS = setOf("candi", "kuil", "gunung", "bukit", "menara", "stupa", "pura")
+
+    /** True kalau teks mengandung "puncak" DAN setiap kemunculannya
+     *  diikuti kata tempat ("puncak candi", "puncak gunung"). Satu
+     *  kemunculan klimaks saja ("puncak pertempuran") -> false, "puncak"
+     *  tetap dihitung finalitas. */
+    private fun peakIsOnlyPlaceWord(text: String): Boolean {
+        val tokens = tokensOf(text)
+        var found = false
+        for (i in tokens.indices) {
+            if (!stemMatches(tokens[i], "puncak")) continue
+            found = true
+            val next = tokens.getOrNull(i + 1)
+            if (next == null || next !in PEAK_PLACE_WORDS) return false
+        }
+        return found
+    }
+
     /** Semua klaim finalitas di teks (kata + frasa, EN + ID). */
     fun findFinality(text: String): List<String> {
         if (text.isBlank()) return emptyList()
-        return findWords(text, FINALITY_WORDS_EN + FINALITY_WORDS_ID) +
+        val words = findWords(text, FINALITY_WORDS_EN + FINALITY_WORDS_ID)
+            .filterNot { it == "puncak" && peakIsOnlyPlaceWord(text) }
+        return words +
             findPhrases(text, FINALITY_PHRASES_EN + FINALITY_PHRASES_ID)
     }
 

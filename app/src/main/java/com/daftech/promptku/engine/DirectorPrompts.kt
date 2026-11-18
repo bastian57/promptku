@@ -304,7 +304,9 @@ object DirectorPrompts {
         val referenceRule = if (mode == V2Mode.REFERENCE) {
             "REFERENCE IMAGES: the hero's and antagonist's appearance (face, hair, clothes, build, " +
                 "colors) is already in the reference images — NEVER describe their appearance in " +
-                "action_en; name the actor only and write what they DO. "
+                "action_en; name the actor only and write what they DO. This applies to EVERY " +
+                "scene, including the closing scene — a tunic rippling in the breeze or a sash " +
+                "catching the light is still appearance description, not action. "
         } else ""
         return "Story bible:\n" +
             "Title: ${bible.title}. Logline: ${bible.logline}.\n" +
