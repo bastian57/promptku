@@ -136,7 +136,16 @@ object ValidationGates {
             val action = scene.plan.actionEn
             val narration = scene.plan.narrationId
             // R1 — finalitas hanya di Klimaks.
-            val finality = ArcLexicon.findFinality(action) + ArcLexicon.findFinality(narration)
+            // v2.1 fix10 — narasi Penutup boleh RETROSPEKTIF: tugas
+            // narasi aftermath adalah merangkum akhir ("menandai akhir
+            // pertarungan" — lapangan Everest S6). Kata "akhir"-nya
+            // (isRetrospectiveFinality) dikecualikan dari hitungan narasi
+            // di Penutup; kata "puncak"-nya (memuncak/decisive/climax)
+            // tetap gagal — itu klaim klimaks sedang terjadi, bukan
+            // rangkuman. Aksi Penutup tetap dicek penuh.
+            val narrFinalityR1 = ArcLexicon.findFinality(narration)
+                .filter { role != BeatRole.CLOSING || !ArcLexicon.isRetrospectiveFinality(it) }
+            val finality = ArcLexicon.findFinality(action) + narrFinalityR1
             if (finality.isNotEmpty() && role != BeatRole.CLIMAX) {
                 failures.add(
                     "Scene $num (${beat.name}): klaim finalitas \"${finality.first()}\" di luar Klimaks"
@@ -157,7 +166,14 @@ object ValidationGates {
                 )
             }
             // R7 — narasi mengklaim klimaks yang tidak ditunjukkan aksinya.
+            // v2.1 fix10 — sama seperti R1: di Penutup, kata retrospektif
+            // ("akhir") di narasi bukan klaim — narasi merangkum klimaks
+            // yang TERJADI di scene sebelumnya, sementara aksi Penutup
+            // memang tidak boleh big attack (R7 melarang berantem di
+            // Penutup), jadi menuntut big attack di aksi Penutup adalah
+            // kontradiksi struktural. Kata "puncak" tetap dicek.
             val narrFinality = ArcLexicon.findFinality(narration)
+                .filter { role != BeatRole.CLOSING || !ArcLexicon.isRetrospectiveFinality(it) }
             if (narrFinality.isNotEmpty() && !ArcLexicon.isBigAttack(action)) {
                 failures.add(
                     "Scene $num: narasi mengklaim klimaks (\"${narrFinality.first()}\") yang tidak ditunjukkan aksinya"
@@ -391,8 +407,18 @@ object ValidationGates {
                 if (!text.contains("${lens}mm")) missing.add("lensa ${lens}mm")
             }
             effect.cameraMove?.let { move ->
-                val firstWord = move.phraseEn.split(" ").firstOrNull().orEmpty()
-                if (firstWord.isNotBlank() && !text.contains(firstWord)) missing.add("kamera ${move.phraseEn}")
+                // v2.1 fix10 — rantai kamera (fix8): "continuing ..." di
+                // teks berarti kamera scene ini DIWARISI dari scene
+                // sebelumnya (chainCameras override kamera efek) — ekspektasi
+                // kamera efek BATAL untuk scene ini; kamera warisan sudah
+                // dicek G3 di scene sebelumnya. Lensa tetap dicek (rantai
+                // tidak override lensa). Lapangan Everest S2: efek
+                // punch_uppercut kameranya "tracking shot" tapi teks
+                // "continuing whip pan" — G3 salah flag.
+                if (!text.contains("continuing")) {
+                    val firstWord = move.phraseEn.split(" ").firstOrNull().orEmpty()
+                    if (firstWord.isNotBlank() && !text.contains(firstWord)) missing.add("kamera ${move.phraseEn}")
+                }
             }
             if (missing.isEmpty()) null
             else "Scene ${scene.sceneNumber}: efek ${effect.id} tanpa ${missing.joinToString(", ")}"

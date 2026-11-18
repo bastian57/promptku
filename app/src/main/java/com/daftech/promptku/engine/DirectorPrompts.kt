@@ -215,10 +215,10 @@ object DirectorPrompts {
         val villain = bible.antagonistName.ifBlank { "the antagonist" }
         val lines = inBeat.joinToString(" ") { (scene, role) ->
             when (role) {
-                FightRole.EXCHANGE -> "Scene $scene = EXCHANGE: rapid flurry — 2–3 fast moves in one continuous flow, no pause, no slow motion."
+                FightRole.EXCHANGE -> "Scene $scene = EXCHANGE: start ALREADY mid-exchange — the first verb is a strike, no approach, no shouting, no stance. 2–3 fast moves in one continuous flow, each blow with its consequence in the same clause (ice cracks, snow explodes, armor shards). NEVER write that the hero \"snaps back\" for a counter-attack — write that he \"answers\" or \"drives\" it. End the action on the final impact, hero on his feet, fists raised — never end on a recovery or kneeling pose."
                 FightRole.TENSION -> "Scene $scene = TENSION: NO contact — circling, staring, breathing, dust settling; the pause that makes the next burst feel faster."
                 FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands a heavy blow on $villain — time dilates into a held heartbeat as the blow connects, $villain's face twisting in shock, then the world snaps back to full speed. Do NOT write the words \"slow motion\" in action_en — the app adds the slow-motion moment at render; write the blow and the face. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
-                FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero stumbles backward, reeling from the hit, one knee buckling, then his jaw sets and he rises."
+                FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero stumbles backward, reeling from the hit, clutching his side, then his jaw sets and he rises."
                 FightRole.FINISHER -> "Scene $scene = FINISHER: the finishing move lands and time holds for a heartbeat — $villain falls."
                 FightRole.NONE -> ""
             }
@@ -286,6 +286,11 @@ object DirectorPrompts {
             "FIGHT PACING: fast is the DEFAULT for fight scenes — exchanges, movement, camera. " +
                 "Slow motion ONLY in the IMPACT scene and the finisher scene named in the beat block above. " +
                 "NEVER write \"slow motion\", \"time freezes\", or \"freezes for a heartbeat\" in any other scene's action_en. " +
+                "Start every fight scene ALREADY mid-motion — the first verb is a strike, never an approach, a shout, or a stance. " +
+                "Every blow names its consequence in the same clause (the block cracks the ice, snow explodes, armor shards fly). " +
+                "For a counter-attack, NEVER write that the hero \"snaps back\" — the model reads it as recoil; write that he \"answers\" or \"drives\" the counter. " +
+                "End every fight scene on the final impact, hero on his feet — never trail off into a recovery or kneeling pose (unless the beat is HERO_HURT). " +
+                "Camera follows the fastest object — chase the fists, snap-zoom with each impact — never a slow drift. " +
                 "Fight scenes are ONE continuous flow — each scene continues the previous scene's motion and camera; never restart the fight as a new duel. "
         } else ""
         // v2.1 fix7 — Mode B: penampilan SUDAH di gambar (audit Aang
@@ -341,7 +346,9 @@ object DirectorPrompts {
             "leave the $langName field empty while the translation is filled; " +
             "action_en = ONE action only — for FIGHT scenes, the ONE action is a rapid flurry: " +
             "2–3 fast moves in one continuous flow, without pause (jab, cross, spinning kick — " +
-            "not three separate beats); never paste the world description, setting, or a list " +
+            "not three separate beats), starting ALREADY mid-exchange with the first verb a strike, " +
+            "each blow with its consequence in the same clause, ending on the final impact with the " +
+            "hero on his feet; never paste the world description, setting, or a list " +
             "of places into action_en (the app pastes the world itself); " +
             "action_en MUST name its actor explicitly at the start (e.g. 'The Golden Demon spreads " +
             "its wings...' or 'Broly hurls a plasma wave...'), never a bare verb phrase ('spreads " +

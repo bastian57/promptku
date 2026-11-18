@@ -320,6 +320,22 @@ object ArcLexicon {
         return phrases.filter { phrase -> lower.contains(" $phrase ") }
     }
 
+    /** Kata/frasa finalitas yang RETROSPEKTIF ("akhir"-nya, bukan
+     *  "puncak"-nya): di narasi Penutup ini rangkuman aftermath yang sah,
+     *  bukan klaim klimaks prematur (v2.1 fix10, lapangan Everest S6:
+     *  "menandai akhir pertarungan" kena R1 padahal Penutup). "memuncak"/
+     *  "puncak"/"decisive"/"climax" TIDAK masuk sini — itu klaim klimaks
+     *  sedang terjadi, bukan rangkuman. Dipakai runArcGate untuk
+     *  menyaring hitungan finalitas NARASI di beat Penutup saja; aksi
+     *  tetap dicek penuh. */
+    val RETROSPECTIVE_FINALITY = setOf(
+        "akhir", "terakhir", "pamungkas", "final", "ultimate",
+        "at last", "once and for all", "final blow", "serangan terakhir"
+    )
+
+    /** Apakah satu match findFinality termasuk kata retrospektif. */
+    fun isRetrospectiveFinality(match: String): Boolean = match in RETROSPECTIVE_FINALITY
+
     /** Semua klaim finalitas di teks (kata + frasa, EN + ID). */
     fun findFinality(text: String): List<String> {
         if (text.isBlank()) return emptyList()
@@ -370,6 +386,58 @@ object ArcLexicon {
         return triggers.any { ti -> nouns.any { ni -> ti != ni && kotlin.math.abs(ti - ni) <= 6 } }
     }
 
+    /** Kata dalam tanda kutip BUKAN jurus: LLM kadang menulis dialog ke
+     *  dalam action_en ("proclaiming, 'Peace returns to the summit,'")
+     *  — "Peace" kapital karena awal dialog dalam kutip, bukan nama
+     *  jurus (v2.1 fix10, lapangan Everest S6: R4b salah flag "peace"
+     *  di Penutup). Ganti tiap kata dalam kutip dengan placeholder
+     *  "quoted" (jumlah kata DIPERTAHANKAN supaya jarak token scan
+     *  huruf kecil tidak berubah). Apostrof di dalam kata ("Emperor's",
+     *  "don't") BUKAN tanda kutip — cuma ' yang TIDAK diapit huruf di
+     *  kedua sisi yang membuka/menutup kutip. */
+    private fun dequoteForMoveScan(text: String): String {
+        val out = StringBuilder()
+        var inSingle = false
+        var inDouble = false
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            val prevLetter = i > 0 && text[i - 1].isLetter()
+            val nextLetter = i + 1 < text.length && text[i + 1].isLetter()
+            val isApostrophe = c == '\'' && prevLetter && nextLetter
+            when {
+                isApostrophe -> {
+                    out.append(c)
+                    i++
+                }
+                c == '"' && !inSingle -> {
+                    inDouble = !inDouble
+                    out.append(' ')
+                    i++
+                }
+                c == '\'' && !inDouble -> {
+                    inSingle = !inSingle
+                    out.append(' ')
+                    i++
+                }
+                inSingle || inDouble -> {
+                    if (c.isLetterOrDigit()) {
+                        out.append("quoted")
+                        while (i < text.length && text[i].isLetterOrDigit()) i++
+                    } else {
+                        out.append(' ')
+                        i++
+                    }
+                }
+                else -> {
+                    out.append(c)
+                    i++
+                }
+            }
+        }
+        return out.toString()
+    }
+
     /** Jurus bernama: frasa Kapital di tengah kalimat yang bukan nama
      *  hero/antagonis/dunia dan bukan bagian dari deskripsi yang sudah
      *  ada di bible (anchor hero, deskripsi dunia/cahaya). "Tempest
@@ -378,12 +446,15 @@ object ArcLexicon {
      *  awal kalimat TIDAK (posisi kalimat). */
     fun extractNamedMove(actionEn: String, bible: StoryBible): String? {
         if (actionEn.isBlank()) return null
+        // v2.1 fix10 — scan di atas teks tanpa kutip (lihat dequote di
+        // atas): kata dialog berkapital dalam kutip bukan jurus.
+        val scanText = dequoteForMoveScan(actionEn)
         val exclusions = (
             listOf(bible.hero?.name, bible.antagonistName, bible.worldName) +
                 (bible.hero?.anchorsEn.orEmpty()) +
                 listOf(bible.antagonistDescEn, bible.worldDescEn, bible.lightEn)
             ).mapNotNull { it?.lowercase()?.trim() }.filter { it.isNotBlank() }
-        val sentences = actionEn.split(Regex("(?<=[.!])\\s+"))
+        val sentences = scanText.split(Regex("(?<=[.!])\\s+"))
         for (sentence in sentences) {
             val words = sentence.split(Regex("\\s+")).filter { it.isNotBlank() }
             var i = 0
@@ -429,7 +500,7 @@ object ArcLexicon {
         // serangan generik ("energy beam", "plasma disk", "orange
         // vortex") TIDAK dihitung jurus — itu urusan isBigAttack (R4),
         // bukan R4b. Kandidat tetap disaring exclusions yang sama.
-        val lowerMove = extractLowercaseTransform(actionEn) ?: return null
+        val lowerMove = extractLowercaseTransform(scanText) ?: return null
         val lowerKey = lowerMove.lowercase()
         val lowerExcluded = exclusions.any { ex ->
             ex == lowerKey || ex.contains(lowerKey) || lowerKey == ex.split(" ").lastOrNull().orEmpty()

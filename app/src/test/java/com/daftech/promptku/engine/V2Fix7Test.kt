@@ -570,12 +570,18 @@ class V2Fix7Test {
     fun heroHurtBeatBlockUsesDifferentWordsThanFragment() {
         // Blok HERO_HURT lama = parafrasa fragmen ("staggers back, blood
         // on his lip, knees buckling") — inti + fragmen duplikat 2x di
-        // render (S4 lapangan). Blok baru pakai penanda lain.
+        // render (S4 lapangan). Blok fix7 ganti "blood on his lip" tapi
+        // "one knee buckling" masih menggema "knees buckling" fragmen
+        // (lapangan Everest S4: citra sama 2x, singular vs plural).
+        // Blok fix10 hindari SEMUA frasa fragmen: "clutching his side"
+        // (bukan "knees buckling"), tetap lolos R9b via "stumbles"/"reeling".
         val prompt = DirectorPrompts.prompterUser(bima18Bible(), listOf(12), "")
         assertTrue(prompt.contains("reeling"))
-        assertTrue(prompt.contains("one knee buckling"))
+        assertTrue(prompt.contains("clutching his side"))
         assertFalse(prompt.contains("blood on his lip"))
         assertFalse(prompt.contains("staggers back"))
+        assertFalse(prompt.contains("knees buckling"))
+        assertFalse(prompt.contains("one knee buckling"))
     }
 
     @Test
@@ -595,7 +601,7 @@ class V2Fix7Test {
             flowPrompt(
                 aangPlan(
                     4,
-                    "Fire Emperor lands a clean hit — Aang stumbles backward, reeling from the hit, one knee buckling, then his jaw sets and he rises."
+                    "Fire Emperor lands a clean hit — Aang stumbles backward, reeling from the hit, clutching his side, then his jaw sets and he rises."
                 )
             ),
             flowPrompt(
