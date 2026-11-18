@@ -98,6 +98,10 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var statusMessage by mutableStateOf("")
         private set
+    // v2.1 fix9 — peringatan film terpotong (batch prompter gagal sebagian):
+    // dibaca statusMessage + header export supaya tidak hilang diam-diam.
+    var truncationWarning by mutableStateOf<String?>(null)
+        private set
     // Job prompter yang sedang jalan (untuk tombol Batalkan) + id baris
     // bible yang tersimpan (untuk menyimpan koreksi chip ke cache).
     private var buildJob: Job? = null
@@ -674,6 +678,14 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     statusMessage = fail.message
                     return@launch
                 }
+                // v2.1 fix9 — batch gagal SEBAGIAN = film TERPOTONG (audit
+                // Aang: 1 menit = 6 scene, S6 Penutup hilang karena batch
+                // terakhir gagal; fail lama diabaikan kalau plans tak kosong
+                // sehingga film lanjut diam-diam tanpa aftermath). Simpan
+                // peringatan untuk statusMessage + header export.
+                truncationWarning = if (fail != null && plans.isNotEmpty()) {
+                    "Peringatan: prompter gagal di sebagian batch (${fail.message}) — film terpotong jadi ${plans.size} dari ${current.totalScenes} scene. Scene yang hilang tidak ikut ter-generate."
+                } else null
                 var rendered = ModeRender.renderAll(current, plans, mode, isFight, images.size)
                 var gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
                 // Gerbang 6: coba ulang 1x scene yang gagal (kecuali G4 — itu
@@ -713,7 +725,20 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     if (retryPlans.isNotEmpty()) {
-                        val retryRendered = ModeRender.renderAll(current, retryPlans, mode, isFight, images.size)
+                        // v2.1 fix9 — retry HARUS render film PENUH (bukan
+                        // subset), pola yang sama dengan regenerasi 1 scene
+                        // di fix8: peran fight, rantai kamera, dan lastScene
+                        // dihitung dari SELURUH film. Render subset bikin
+                        // scene retry kehilangan efek perannya (lastScene =
+                        // maxOf subset -> efek dikosongin) + rantainya
+                        // (audit Aang: S3 kehilangan fight_impact, S2
+                        // kehilangan "continuing"). Scene lain tidak ikut
+                        // berubah: efek mereka sudah terpasang dan pose
+                        // mereka dipertahankan fillPosesFromCycle.
+                        val retryByNum = retryPlans.associateBy { it.sceneNumber }
+                        val allPlans = rendered.map { it.plan }
+                            .map { if (it.sceneNumber in retryByNum) retryByNum.getValue(it.sceneNumber).copy(effectId = "") else it }
+                        val retryRendered = ModeRender.renderAll(current, allPlans, mode, isFight, images.size)
                         val byNum = retryRendered.associateBy { it.sceneNumber }
                         rendered = rendered.map { scene -> byNum[scene.sceneNumber] ?: scene }
                         gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
@@ -741,11 +766,14 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.IO) { saveScenes(current, rendered) }
                 step = V2Step.PROMPTS
                 val flagged = rendered.count { it.needsReview }
-                statusMessage = if (flagged == 0) {
+                val baseStatus = if (flagged == 0) {
                     "Semua ${rendered.size} prompt lolos 7 gerbang validasi."
                 } else {
                     "$flagged dari ${rendered.size} scene ditandai perlu cek manual — baca alasannya di tiap scene."
                 }
+                // v2.1 fix9 — peringatan terpotong di depan status (bukan
+                // cuma di export): user harus tahu filmnya kurang scene.
+                statusMessage = if (truncationWarning != null) "$truncationWarning $baseStatus" else baseStatus
                 refreshQuota()
             } catch (e: CancellationException) {
                 // Dibatalkan tombol Batalkan (atau ViewModel dibersihkan):
@@ -1023,6 +1051,9 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
         sb.appendLine("Cahaya: ${current.lightEn}")
         sb.appendLine("Ambience: ${current.ambienceEn}")
         if (isOfflineDraft) sb.appendLine("PERINGATAN: DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")
+        // v2.1 fix9 — film terpotong (batch gagal) tercatat di export supaya
+        // audit lapangan bisa melihatnya tanpa statusMessage yang sudah hilang.
+        if (truncationWarning != null) sb.appendLine(truncationWarning)
         sb.appendLine("Total scene: ${scenes.size} | Disetujui: ${scenes.count { it.approved }}/${scenes.size}")
         sb.appendLine()
         val engines = if (allEngines) {

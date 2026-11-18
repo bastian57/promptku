@@ -213,14 +213,20 @@ object ModeRender {
         plans: List<V2ScenePlan>,
         isFight: Boolean,
         totalBeats: Int,
-        fightRoles: Map<Int, FightRole> = emptyMap()
+        fightRoles: Map<Int, FightRole> = emptyMap(),
+        // v2.1 fix9 — scene terakhir FILM (bukan maxOf daftar yang dilempar):
+        // retry/regenerasi render subset dulu menghitung lastScene dari subset
+        // (scene retry jadi "last scene" sendiri -> efeknya dikosongin, audit
+        // Aang: S3 kehilangan fight_impact, lensa 50 bukan 85). 0 = perilaku
+        // lama (maxOf) untuk pemanggil lama/tes lama.
+        filmTotalScenes: Int = 0
     ): List<V2ScenePlan> {
         if (plans.isEmpty()) return plans
         val totalScenes = plans.size
         val scenesPerBeat = (totalScenes + totalBeats - 1) / totalBeats
         val climaxBeat = if (totalBeats <= 5) 3 else 5
         val climaxFirstScene = climaxBeat * scenesPerBeat + 1
-        val lastScene = plans.maxOf { it.sceneNumber }
+        val lastScene = if (filmTotalScenes > 0) filmTotalScenes else plans.maxOf { it.sceneNumber }
         val fightMoves = EffectLibrary.FIGHT_MOVES_ALL.filter { it.id != "finisher" }
         val cameraMoves = EffectLibrary.ALL.filter { it.category == EffectCategory.CAMERA }
         // v2.1 — benih `used` dari efek yang SUDAH terpasang (regenerasi 1 scene:
@@ -233,7 +239,12 @@ object ModeRender {
             var effectId = plan.effectId
             if (effectId.isBlank()) {
                 when {
-                    plan.sceneNumber == lastScene -> effectId = ""
+                    // v2.1 fix9 — cabang PERAN DULU, baru lastScene (audit Aang):
+                    // film pendek yang berakhir di Klimaks (5 scene, S5 =
+                    // finisher + last scene) kehilangan efek finisher karena
+                    // lastScene dicek duluan ("slow dolly in" rencana, bukan
+                    // CRANE_UP). Scene ber-peran tidak pernah kena lastScene;
+                    // lastScene hanya mengosongkan scene TANPA peran (Penutup).
                     fightRoles[plan.sceneNumber] == FightRole.IMPACT -> {
                         effectId = "fight_impact"
                         used.add(effectId)
@@ -254,6 +265,16 @@ object ModeRender {
                         effectId = "finisher"
                         used.add("finisher")
                     }
+                    // v2.1 fix9 — cabang lastScene HANYA untuk scene TANPA
+                    // peran (Penutup/aftermath): scene ber-peran (termasuk
+                    // EXCHANGE — perannya siklus, bukan cabang di atas)
+                    // tidak pernah dikosongkan. Film pendek yang berakhir
+                    // di Klimaks: scene terakhirnya EXCHANGE (S6 di peta
+                    // [1,1,2,2]) — kalau dikosongkan, klimaks kehilangan
+                    // jurus di scene penutupnya.
+                    plan.sceneNumber == lastScene &&
+                        (fightRoles[plan.sceneNumber] == null ||
+                            fightRoles[plan.sceneNumber] == FightRole.NONE) -> effectId = ""
                     isFight && plan.sceneNumber == climaxFirstScene -> {
                         effectId = "finisher"
                         used.add("finisher")
@@ -292,8 +313,11 @@ object ModeRender {
     fun effectFragment(effect: Effect, bible: StoryBible): String {
         if (effect.fragmentEn.isBlank()) return ""
         val target = bible.antagonistName.ifBlank { bible.hero?.name ?: "the opponent" }
+        // v2.1 fix9 — nama diri WAJIB kapital (drive-by fix7 item 4: audit
+        // Olympus menemukan "general kallistos" lowercase 5x karena
+        // .lowercase() di sini; nama tokoh di tengah kalimat tetap kapital).
         return effect.fragmentEn
-            .replace("the giant", target.lowercase())
+            .replace("the giant", target)
             .replace("The giant", target)
     }
 
@@ -412,7 +436,17 @@ object ModeRender {
             shot.cameraMove.phraseEn
         }
         val anglePhrase = shot.angle.phraseEn
-        val action = cleanField(sanitizeAction(plan.actionEn, bible))
+        // v2.1 fix9 — Mode B ikut menempel fragmen efek (audit Aang: fragmen
+        // peran IMPACT/HERO_HURT/FINISHER tidak pernah sampai ke Flow di Mode
+        // B karena renderReference pakai plan.actionEn mentah; tempelan
+        // fragmen cuma ada di shotInputFor Mode A). Fragmen DILINDUNGI dari
+        // trim di bawah: yang dipotong cuma ekor aksi INTI (LLM), fragmen
+        // utuh — kalau ekor fragmen yang dipotong, momen perannya (mis.
+        // slow-mo finisher) justru hilang.
+        val effect = EffectLibrary.ALL.firstOrNull { it.id == plan.effectId }
+        val frag = effect?.let { effectFragment(it, bible) }.orEmpty()
+        val coreAction = cleanField(sanitizeAction(plan.actionEn, bible))
+        val action = if (frag.isBlank()) coreAction else "$coreAction $frag"
         val world = cleanField(cleanWorldStart(bible.worldDescEn))
         val light = cleanField(bible.lightEn)
         // v2.1 fix4 — dialog ditulis beserta pembicaranya bila prompter
@@ -428,8 +462,14 @@ object ModeRender {
             else -> ""
         }
         val speakerName = speaker.ifBlank { heroName }
-        val dialogue = if (dialogueText.isBlank()) "" else
-            " $speakerName says: ${cleanField(dialogueText)}."
+        // v2.1 fix9 — jangan append "." kalau dialog sudah diakhiri "!" / "?"
+        // (audit Aang: "world!." di 4/4 scene dialog). Tanda serunya
+        // DIPERTAHANKAN (teriakan tetap teriakan) — bukan dibuang cleanField.
+        val dialogue = if (dialogueText.isBlank()) "" else {
+            val clean = cleanField(dialogueText)
+            val end = if (clean.endsWith("!") || clean.endsWith("?")) "" else "."
+            " $speakerName says: $clean$end"
+        }
         val audio = audioClause(plan.audioEn, bible.ambienceEn)
         val aspect = aspectClause(bible.aspectRatio)
         val referenceLine = if (imageCount >= 2) {
@@ -483,12 +523,16 @@ object ModeRender {
             0
         }
         if (overWords > 0 || overChars > 0) {
-            val actionWords = action.split(Regex("\\s+"))
-            val keepByWords = if (overWords > 0) actionWords.size - overWords else actionWords.size
+            // v2.1 fix9 — trim HANYA ekor aksi inti (fragmen utuh, lihat di
+            // atas): potong kata inti sebanyak kelebihan, fragmen ditempel lagi
+            // utuh. Tanpa fragmen, coreWords == actionWords (perilaku lama).
+            val coreWords = coreAction.split(Regex("\\s+"))
+            val keepByWords = if (overWords > 0) coreWords.size - overWords else coreWords.size
             // ~6 karakter/kata rata-rata: potong 1 kata per 6 karakter lebih.
-            val keepByChars = if (overChars > 0) actionWords.size - (overChars / 6 + 1) else actionWords.size
+            val keepByChars = if (overChars > 0) coreWords.size - (overChars / 6 + 1) else coreWords.size
             val keep = maxOf(4, minOf(keepByWords, keepByChars))
-            text = buildText(cleanField(actionWords.take(keep).joinToString(" ")))
+            val trimmedCore = cleanField(coreWords.take(keep).joinToString(" "))
+            text = buildText(if (frag.isBlank()) trimmedCore else "$trimmedCore $frag")
         }
         return text
     }
@@ -546,7 +590,10 @@ object ModeRender {
         // penuh (scene 10 tetap IMPACT walau retry cuma 3 scene).
         val beatMap = BeatMap.build(bible.totalScenes, bible.beats)
         val roles = BeatMap.fightRoles(beatMap, bible.beats, isFight)
-        val assigned = assignEffects(plans, isFight, totalBeats, roles)
+        // v2.1 fix9 — teruskan scene terakhir FILM ke assignEffects (bukan
+        // maxOf daftar plans): render subset (retry/regenerasi) tidak boleh
+        // mengubah siapa "scene terakhir" — audit Aang.
+        val assigned = assignEffects(plans, isFight, totalBeats, roles, bible.totalScenes)
         // v2.1 fix6 (riset) — Mode A cloud tidak punya pose (prompter JSON
         // tak ada field pose) -> "Ends as standing firm." 18x (Bima). Isi
         // dari siklus di sini, SETELAH assignEffects, SEBELUM renderScene:

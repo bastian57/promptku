@@ -217,7 +217,7 @@ object DirectorPrompts {
             when (role) {
                 FightRole.EXCHANGE -> "Scene $scene = EXCHANGE: rapid flurry — 2–3 fast moves in one continuous flow, no pause, no slow motion."
                 FightRole.TENSION -> "Scene $scene = TENSION: NO contact — circling, staring, breathing, dust settling; the pause that makes the next burst feel faster."
-                FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands the decisive blow on $villain — time ramps into slow motion for a heartbeat, the camera pushes in close on $villain's face, eyes wide with pain, jaw slack, then snaps back to full speed. Write the words \"slow motion\" in action_en HERE. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
+                FightRole.IMPACT -> "Scene $scene = IMPACT (the one slow-mo moment before the finisher): $hero lands a heavy blow on $villain — time ramps into slow motion for a heartbeat, the camera pushes in close on $villain's face, eyes wide with pain, jaw slack, then snaps back to full speed. Write the words \"slow motion\" in action_en HERE. AUDIO for this scene: all sound drops to a low heartbeat just before the blow, then the impact cracks loud."
                 FightRole.HERO_HURT -> "Scene $scene = HERO HURT: $villain lands a clean hit — $hero staggers back, blood on his lip, knees buckling, then his eyes harden and he rises."
                 FightRole.FINISHER -> "Scene $scene = FINISHER: the finishing move lands in slow motion — $villain falls."
                 FightRole.NONE -> ""

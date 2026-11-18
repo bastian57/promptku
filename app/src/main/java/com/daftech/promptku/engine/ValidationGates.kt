@@ -17,6 +17,22 @@ data class GateResult(
 
 object ValidationGates {
 
+    // v2.1 fix9 — kata sambung yang kalau jadi kata TERAKHIR aksi berarti
+    // kalimatnya tidak selesai ("...follows the subject closely as.",
+    // "...snaps back to full speed while." — audit Aang S2/S3). Kata
+    // sambung di TENGAH kalimat sah ("...as the sun sets") — yang dicek
+    // cuma kata terakhir setelah tanda baca ujung dibuang.
+    private val DANGLING_ENDINGS = setOf("while", "as", "and", "but", "with")
+
+    /** Kata sambung yang menggantung di ujung [actionEn], atau null kalau
+     *  aksi selesai dengan baik / kosong (kosong urusan gerbang lain). */
+    fun danglingWord(actionEn: String): String? {
+        val trimmed = actionEn.trim().trimEnd('.', '!', '?', ',', ';', ':').trim()
+        if (trimmed.isBlank()) return null
+        val last = trimmed.substringAfterLast(' ').lowercase()
+        return if (last in DANGLING_ENDINGS) last else null
+    }
+
     private val FIGHT_VERBS = listOf(
         "punch", "punches", "kick", "kicks", "grapple", "grapples",
         "slam", "slams", "uppercut", "strike", "strikes", "hit", "hits",
@@ -409,6 +425,11 @@ object ValidationGates {
         // dilarang mengosongkan narration_id; S18 Broly hilang karena "or
         // empty"). Scene tanpa narasi gagal di sini supaya masuk retryReasons
         // dan prompter mengisi ulang — bukan lolos diam-diam.
+        // v2.1 fix9 — aksi menggantung (audit Aang: S2 "closely as.", S3
+        // "full speed while."): aksi yang berakhir dengan kata sambung =
+        // kalimat tidak selesai (LLM kepotong di tengah pikiran). Bukan
+        // trim — kata-kata di bawah cap — jadi ini cacat LLM yang retry
+        // bisa perbaiki: masuk G5 (bukan G4 yang dikecualikan dari retry).
         val g5Failures = scenes.mapNotNull { scene ->
             val idWords = wordCount(scene.plan.dialogueId)
             val enWords = wordCount(scene.plan.dialogueEn)
@@ -420,15 +441,17 @@ object ValidationGates {
             val hasDialogue = scene.plan.dialogueId.isNotBlank() || scene.plan.dialogueEn.isNotBlank()
             val chosenBlank = if (bible.dialogueLang == "EN") scene.plan.dialogueEn.isBlank()
                 else scene.plan.dialogueId.isBlank()
+            val dangling = danglingWord(scene.plan.actionEn)
             when {
                 idWords > 8 -> "Scene ${scene.sceneNumber}: dialog ID $idWords kata (maks 8)"
                 enWords > 8 -> "Scene ${scene.sceneNumber}: dialog EN $enWords kata (maks 8)"
                 hasDialogue && chosenBlank -> "Scene ${scene.sceneNumber}: dialog ada tapi bukan bahasa pilihan (${bible.dialogueLang})"
                 scene.plan.narrationId.isBlank() && requireNarration -> "Scene ${scene.sceneNumber}: narasi kosong (wajib terisi)"
+                dangling != null -> "Scene ${scene.sceneNumber}: aksi menggantung di kata '$dangling' (kalimat tidak selesai)"
                 else -> null
             }
         }
-        results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip; narasi terisi", g5Failures.isEmpty(), g5Failures))
+        results.add(GateResult("G5", "Dialog ≤8 kata, 1 pembicara per klip; narasi terisi; aksi tidak menggantung", g5Failures.isEmpty(), g5Failures))
 
         // G7 — Satu Puncak (fix6 riset): alur naik ke SATU klimaks.
         // Membaca action_en DAN narration_id (narasi membawa 9/12 klaim
