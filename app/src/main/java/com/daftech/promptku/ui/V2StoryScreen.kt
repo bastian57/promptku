@@ -1,6 +1,7 @@
 package com.daftech.promptku.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
@@ -97,13 +99,19 @@ fun V2StoryScreen(v2: V2ViewModel) {
             }
             // v2.2 — ganti engine tujuan (prompter berikutnya pakai engine
             // baru; render ulang ke engine lain tetap gratis).
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // v2.2-fix1 — baris chip bisa di-scroll horizontal: 4 tombol
+            // (FLOW/WAN/KLING/SEEDANCE) tidak muat selebar layar, SEEDANCE
+            // terlipat jadi "SEED ANC E" kalau Row dipaksa muat.
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 TargetEngine.values().forEach { engine ->
                     OutlinedButton(
                         onClick = { v2.updateTargetEngineChip(engine) },
                         enabled = !v2.busy && bible.targetEngine != engine
                     ) {
-                        Text(engine.name)
+                        Text(engine.name, maxLines = 1)
                     }
                 }
             }

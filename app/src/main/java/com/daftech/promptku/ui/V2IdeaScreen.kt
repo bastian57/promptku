@@ -6,6 +6,7 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
@@ -206,9 +209,14 @@ fun V2IdeaScreen(v2: V2ViewModel) {
         }
         // v2.2 — engine tujuan: prompter menulis khusus untuk engine ini
         // (satu profil panjang + aturan audio), bukan generik 4 engine.
+        // v2.2-fix1 — baris chip bisa di-scroll horizontal (alasan sama:
+        // SEEDANCE terlipat kalau Row dipaksa muat selebar layar).
         item {
             Text("Engine tujuan (prompter menulis khusus untuk engine ini):")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 TargetEngine.values().forEach { engine ->
                     ChoiceChip(engine.name, selected = v2.targetEngine == engine, onClick = { v2.updateTargetEngine(engine) })
                 }

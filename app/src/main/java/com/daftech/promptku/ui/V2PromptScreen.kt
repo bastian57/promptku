@@ -1,6 +1,7 @@
 package com.daftech.promptku.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
@@ -86,12 +88,17 @@ fun V2PromptScreen(v2: V2ViewModel) {
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // v2.2-fix1 — baris chip bisa di-scroll horizontal: SEEDANCE
+            // terlipat jadi "SEED ANC E" kalau Row dipaksa muat selebar layar.
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 engines.forEachIndexed { index, engine ->
                     OutlinedButton(
                         onClick = { engineIndex = index },
                         enabled = engineIndex != index
-                    ) { Text(engine.name) }
+                    ) { Text(engine.name, maxLines = 1) }
                 }
             }
         }
