@@ -409,8 +409,14 @@ object ValidationGates {
         if (finishers.size > 1) {
             g2Failures.add("Finisher muncul ${finishers.size}x (maks 1x di klimaks)")
         }
+        // v2.2-fix13 item 2 — cek scene terakhir HANYA kalau film LENGKAP
+        // (scenes.size == bible.totalScenes). Film terpotong (Groq 429):
+        // scene terakhir yang tergenerate BUKAN Penutup — label
+        // "(Penutup)" yang hardcode + cek verba berantem jadi flag palsu
+        // (lapangan Clash: S7 "kicks" di film 7/18; Gotres: S1 "strike"
+        // di film 1/6; Clash Above Everest: S1 "kick" di film 1/6).
         val last = scenes.maxByOrNull { it.sceneNumber }
-        if (last != null) {
+        if (last != null && scenes.size == bible.totalScenes) {
             val lastAction = norm(last.plan.actionEn)
             val verb = FIGHT_VERBS.firstOrNull { lastAction.split(" ").contains(it) }
             if (verb != null) {

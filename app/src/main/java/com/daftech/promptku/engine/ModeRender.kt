@@ -17,8 +17,10 @@ object ModeRender {
 
     // ---------- v2.1 fix6 — pembersih teks render ----------
 
-    /** Buang titik di ujung kalimat sebelum dirangkai (pembunuh ".."). */
-    fun cleanField(text: String): String = text.trim().trimEnd('.').trim()
+    /** Buang titik di ujung kalimat sebelum dirangkai (pembunuh "..") —
+     *  v2.2-fix13 item 3: buang JUGA titik di AWAL (aksi LLM ". Gotres
+     *  launches..." — lapangan Clash S4/S7, aksi inti diawali ". "). */
+    fun cleanField(text: String): String = text.trim().trimStart('.').trimEnd('.').trim()
 
     /** "In A sprawling..." -> "In a sprawling...": artikel "A" di awal deskripsi
      *  dunia jadi huruf kecil. Hanya "A " di awal; kata benda nama diri tidak disentuh. */
@@ -70,6 +72,34 @@ object ModeRender {
         // "and ..." di awal aksi = sisa konjungsi LLM; buang, aktornya tetap.
         if (out.startsWith("and ", ignoreCase = true)) {
             out = out.substring(4).trim()
+        }
+        return out
+    }
+
+    /** Buang kalimat deskripsi dunia yang bocor verbatim ke audioEn
+     *  (v2.2-fix13 item 4 — mekanisme SAMA seperti sanitizeAction di
+     *  atas: kalimat dunia utuh, atau 40 karakter pertamanya).
+     *  Lapangan (kejadian ke-4): Clash S4/S7, Jubah S5/S6, Ujian S1/S3 —
+     *  LLM menempel kalimat dunia di depan SFX ("<dunia>. <SFX asli>.").
+     *  Sisa ".." sesudah dunia dibersihkan cleanField (item 3) di
+     *  tempat pemakaian. Dipanggil di semua jalur render audio:
+     *  shotInputFor (Mode A), audioClause + cabang WAN (Mode B). */
+    fun sanitizeAudio(audioEn: String, bible: StoryBible): String {
+        var out = audioEn.trim()
+        val world = bible.worldDescEn.trim()
+        if (world.length >= 20) {
+            val idx = out.lowercase().indexOf(world.lowercase())
+            if (idx >= 0) {
+                out = (out.substring(0, idx) + out.substring(idx + world.length)).trim()
+                    .trimStart(',', ' ', ';').trim()
+            } else {
+                val head = world.take(40)
+                val idx2 = out.lowercase().indexOf(head.lowercase())
+                if (idx2 >= 0) {
+                    out = (out.substring(0, idx2) + out.substring(idx2 + head.length)).trim()
+                        .trimStart(',', ' ', ';').trim()
+                }
+            }
         }
         return out
     }
@@ -422,7 +452,7 @@ object ModeRender {
             // default render ("standing still" / "standing firm").
             poseStart = plan.poseStart,
             poseEnd = plan.poseEnd,
-            audioEn = cleanField(plan.audioEn),
+            audioEn = cleanField(sanitizeAudio(plan.audioEn, bible)),
             dialogue = DialogueLine(
                 // v2.1 fix4 — pembicara dari rencana LLM (dialogue_speaker);
                 // kosong = hero seperti sebelumnya.
@@ -548,7 +578,7 @@ object ModeRender {
             val end = if (clean.endsWith("!") || clean.endsWith("?")) "" else "."
             " $speakerName says: $clean$end"
         }
-        val audio = audioClause(plan.audioEn, bible.ambienceEn)
+        val audio = audioClause(sanitizeAudio(plan.audioEn, bible), bible.ambienceEn)
         val aspect = aspectClause(bible.aspectRatio)
         val referenceLine = if (imageCount >= 2) {
             "Reference: Image 1 = $heroName, Image 2 = ${bible.worldName}. "
@@ -590,7 +620,7 @@ object ModeRender {
                     referenceLine +
                     "Setting: $world.$dialogue $audio$aspect"
                 TargetEngine.WAN -> "Using the reference image of $heroName, $wanA. " +
-                    "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${cleanField(plan.audioEn).ifBlank { "quiet ambience" }}.$aspect"
+                    "$cameraPhrase, ${shot.lensMm}mm lens, $shotPhrase.$dialogue ${cleanField(sanitizeAudio(plan.audioEn, bible)).ifBlank { "quiet ambience" }}.$aspect"
             }
         }
         var text = buildText(action)

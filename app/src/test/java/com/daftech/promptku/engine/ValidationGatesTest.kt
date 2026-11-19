@@ -67,10 +67,17 @@ class ValidationGatesTest {
 
     @Test
     fun g2FailsOnRepeatedActionAndClosingFight() {
+        // v2.2-fix13 item 2 — cek scene terakhir HANYA di film lengkap:
+        // fixture ini sekarang film LENGKAP 6/6. Dulu 3/6 tapi tetap
+        // mengharapkan flag "(Penutup)" — perilaku lama yang salah
+        // (scene terakhir film terpotong dilabeli Penutup).
         val scenes = listOf(
             scene(1, "punches the giant", "in $worldSig punches."),
             scene(2, "punches the giant", "in $worldSig punches again."),
-            scene(3, "punches the giant", "in $worldSig punches after climax.")
+            scene(3, "punches the giant", "in $worldSig punches after climax."),
+            scene(4, "stands still on the ice", "in $worldSig stands."),
+            scene(5, "watches the horizon", "in $worldSig watches."),
+            scene(6, "punches the giant", "in $worldSig punches at the end.")
         )
         val g2 = ValidationGates.runGates(bible(), scenes, false).first { it.id == "G2" }
         assertFalse(g2.passed)

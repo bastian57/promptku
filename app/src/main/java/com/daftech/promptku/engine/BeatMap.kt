@@ -516,13 +516,21 @@ object ArcLexicon {
         if (actionEn.isBlank()) return null
         // v2.1 fix10 — scan di atas teks tanpa kutip (lihat dequote di
         // atas): kata dialog berkapital dalam kutip bukan jurus.
+        // v2.2-fix13 item 1 — pecah kalimat JUGA di marker beat
+        // "[00:xx-xx]" (mikro-beat fix12): kata sesudah marker adalah
+        // awal kalimat dan dilewati sebagai jurus. Lapangan Clash S6:
+        // "Gotros" (typo LLM untuk "Gotres") sesudah "[00:00-00:03]"
+        // ke-flag sebagai jurus bernama, lalu menghidupkan R6 yang salah
+        // (puncak pra-Klimaks 2 vs Klimaks 0). Kata DI TENGAH klausa
+        // mikro-beat tetap discan normal ("unleashes the Tempest
+        // Breaker" sesudah marker tetap kena).
         val scanText = dequoteForMoveScan(actionEn)
         val exclusions = (
             listOf(bible.hero?.name, bible.antagonistName, bible.worldName) +
                 (bible.hero?.anchorsEn.orEmpty()) +
                 listOf(bible.antagonistDescEn, bible.worldDescEn, bible.lightEn)
             ).mapNotNull { it?.lowercase()?.trim() }.filter { it.isNotBlank() }
-        val sentences = scanText.split(Regex("(?<=[.!])\\s+"))
+        val sentences = scanText.split(Regex("(?<=[.!])\\s+|(?<=\\])\\s+"))
         for (sentence in sentences) {
             val words = sentence.split(Regex("\\s+")).filter { it.isNotBlank() }
             var i = 0
