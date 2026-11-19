@@ -3,7 +3,7 @@ package com.daftech.promptku.engine
 // Mesin prompt PromptKu v1.0.0 — struktur 9 lapis DANCUK Cinematic v2.
 // Satu input wizard -> empat varian output, masing-masing mengikuti
 // FORMULA RESMI engine tujuannya (jangan disalin lintas engine):
-// Flow/Veo: Cinematography + Subject + Action + Context + Style & Ambiance
+// Flow (Omni Flash 1.2): Cinematography + Subject + Action + Context + Style & Ambiance
 // WanGP: Subject + Scene + Motion (I2V: gerakan + kamera saja)
 // Kling: Subject + Action + Setting + Camera + Lighting + Mood
 // Seedance: 8 elemen berurutan + timeline 3 segmen, tanpa negative prompt.
@@ -14,7 +14,7 @@ object PromptEngine {
     const val WAN_NEGATIVE_MANDARIN: String =
         "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
 
-    // Kunci positif Flow/Veo — negative ditulis sebagai keadaan yang diinginkan,
+    // Kunci positif Flow (Omni Flash 1.2) — negative ditulis sebagai keadaan yang diinginkan,
     // bukan "no ..." (panduan resmi Google). Sengaja pendek (23 kata) supaya
     // tidak memakan anggaran kata prompt; kalimat ini DILINDUNGI dari trim.
     const val FLOW_POSITIVE_LOCK: String =
@@ -145,7 +145,7 @@ object PromptEngine {
             "$name -> ${MythFilter.genericSuggestion(name)}"
         }
         return listOf(
-            "Peringatan filter IP: nama berlisensi bisa ditolak Flow/Veo. Saran generik: $suggestions. " +
+            "Peringatan filter IP: nama berlisensi bisa ditolak Flow. Saran generik: $suggestions. " +
             "Keputusan generate tetap di tanganmu — app tidak memblokir."
         )
     }
@@ -519,17 +519,20 @@ object PromptEngine {
         return GeneratedPrompt(engine, trimmed, negative, count, warnings, meter)
     }
 
-    // Flow / Veo — kamera ditulis PERTAMA, dua beat timestamp, audio di baris sendiri.
-    // v1.4.1 — timeline HANYA aksi ("[00:00-00:04] $action."), pose
+    // Flow / Omni 1.2 — kamera ditulis PERTAMA, dua beat timestamp, audio di baris sendiri.
+    // v1.4.1 — timeline HANYA aksi ("[00:00-00:05] $action."), pose
     // pindah ke klausa kontinuitas ("Starts from X, ends as Y"); aksi
     // TIDAK diulang mentah di beat kedua.
-    // v2.1 fix6 (riset) — timestamp SADAR-ENGINE: klip Veo maks 8 detik
-    // ("[00:00-00:04]"/"[00:04-00:08]"); timestamp 10 detik lama meminta
-    // konten di detik 00:05–00:10 yang tidak ada di klip 8 detik. Segmen
-    // kedua BUKAN pose beku 5 detik lagi ("Ends as standing firm" = setengah
-    // klip diam — bertentangan dengan "satu momen fokus per klip"): segmen
-    // kedua kini kelanjutan aksi yang MEREDA ke pose akhir ("the motion
-    // settles, ending as ..."). Scene cerita tetap 10 detik di bible.
+    // v1.3.1 — timestamp SADAR-ENGINE (lagi): Veo 3.1 Fast/Quality pensiun
+    // 5 Des 2026; default Flow kini Omni Flash 1.2 (sampai 15 dtk). Scene
+    // cerita = 10 detik (model flat, mengikat) — segmen kini
+    // "[00:00-00:05]"/"[00:05-00:10]", selaras dengan micro-beat Mode B
+    // (10 dtk) dan timing dialog (5-10 dtk). Batas 8 detik fix6 adalah
+    // batas Veo, bukan batas scene. Segmen kedua BUKAN pose beku 5 detik
+    // ("Ends as standing firm" = setengah klip diam — bertentangan dengan
+    // "satu momen fokus per klip"): segmen kedua kini kelanjutan aksi yang
+    // MEREDA ke pose akhir ("the motion settles, ending as ...").
+    // Fallback Veo 3.1 Lite maks 8 detik — lihat catatan export.
     /** Frasa kamera (fix8 v2): kalau scene ini melanjutkan gerakan kamera
      *  scene sebelumnya (rantai kamera), tulis eksplisit "continuing ...
      *  from the previous shot" — tanpa ini, dua shot whip pan berurutan
@@ -587,9 +590,9 @@ object PromptEngine {
         val otherWords = MythFilter.countWords(
             listOf(
                 s1WithoutDna,
-                "[00:00-00:04] $action.",
+                "[00:00-00:05] $action.",
                 "$material.",
-                "[00:04-00:08] the motion settles, ending as $poseEnd. ${look.second}, ${look.third}.",
+                "[00:05-00:10] the motion settles, ending as $poseEnd. ${look.second}, ${look.third}.",
                 "Audio: $audio.${dialogueFlow(input)}",
                 continuity,
                 gesture ?: "",
@@ -605,7 +608,7 @@ object PromptEngine {
                 dropPriority = 0
             ),
             Sentence(
-                "[00:00-00:04] $action.",
+                "[00:00-00:05] $action.",
                 mandatory = true,
                 dropPriority = 0
             ),
@@ -615,7 +618,7 @@ object PromptEngine {
                 dropPriority = 3
             ),
             Sentence(
-                "[00:04-00:08] the motion settles, ending as $poseEnd. ${look.second}, ${look.third}.",
+                "[00:05-00:10] the motion settles, ending as $poseEnd. ${look.second}, ${look.third}.",
                 mandatory = true,
                 dropPriority = 0
             ),

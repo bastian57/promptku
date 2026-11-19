@@ -1055,12 +1055,12 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 if (current.episodeNumber > 1) " | Episode ${current.episodeNumber}" else ""
         )
         sb.appendLine("Dunia: ${current.worldName} — ${current.worldDescEn}")
-        // v2.1 fix6 (riset) — Veo 3.1 Quality TIDAK mendukung Ingredients
-        // (Flow Help resmi): proyek Mode B (gambar referensi) yang digenerate
-        // di Quality akan ditolak/dialihkan diam-diam — peringatkan di export.
-        if (images.isNotEmpty()) {
-            sb.appendLine("Catatan: Veo 3.1 Quality tidak mendukung Ingredients — di Flow pilih Fast atau Lite, bukan Quality.")
-        }
+        // v1.3.1 — Veo 3.1 Fast/Quality PENSIUN 5 Des 2026: default Flow
+        // kini Omni Flash 1.2 (Ingredients OK, sampai 15 detik per klip);
+        // Veo 3.1 Lite fallback maks 8 detik/720p, tanpa edit/extend.
+        // Catatan ini berlaku untuk SEMUA export Flow (bukan cuma Mode B —
+        // pilihan model penting di tiap render Flow).
+        sb.appendLine("Catatan: di Flow pilih Omni Flash 1.2 (Ingredients OK, sampai 15 detik per klip). Fallback Veo 3.1 Lite: maks 8 detik, 720p. Veo 3.1 Fast/Quality pensiun 5 Des 2026.")
         sb.appendLine("Cahaya: ${current.lightEn}")
         sb.appendLine("Ambience: ${current.ambienceEn}")
         if (isOfflineDraft) sb.appendLine("PERINGATAN: DRAFT OFFLINE (rule-based, tanpa AI) — ulangi di cloud untuk prompt final.")

@@ -114,8 +114,10 @@ object PromptCore {
             format = "${engine.labelId} • 10 dtk • 24fps",
             shot = "$shot, $angle, $lens",
             subject = subject,
-            action = "[00:00-00:04] $poseStart, $action begins. " +
-                "[00:04-00:08] The action completes as $poseEnd.",
+            // v1.3.1 — segmen 10 dtk (batas 8 dtk Veo pensiun bersama
+            // Veo 3.1, 5 Des 2026; default Flow kini Omni Flash 1.2).
+            action = "[00:00-00:05] $poseStart, $action begins. " +
+                "[00:05-00:10] The action completes as $poseEnd.",
             world = world,
             light = light,
             camera = camera,
@@ -192,7 +194,7 @@ object DialogueMatrix {
             TargetEngine.FLOW -> when (lang) {
                 DialogueLang.EN -> DialogueMatrixResult(
                     DialogueCheck.ALLOWED,
-                    "Flow / Veo: dialog Inggris didukung."
+                    "Flow (Omni Flash 1.2): dialog Inggris didukung."
                 )
                 DialogueLang.ID -> DialogueMatrixResult(
                     DialogueCheck.WARN,

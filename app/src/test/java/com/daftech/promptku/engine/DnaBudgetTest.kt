@@ -53,8 +53,8 @@ class DnaBudgetTest {
     fun flowKeepsWorldBeatsAndAudioWithLongDna() {
         val prompt = PromptEngine.build(rikoInput())
         assertTrue(prompt.text.contains("tire repair shop"))
-        assertTrue(prompt.text.contains("[00:00-00:04]"))
-        assertTrue(prompt.text.contains("[00:04-00:08]"))
+        assertTrue(prompt.text.contains("[00:00-00:05]"))
+        assertTrue(prompt.text.contains("[00:05-00:10]"))
         assertTrue(prompt.text.contains("Audio:"))
         assertTrue(prompt.text.contains("golden-hour"))
         // v2.2 — cap Flow 180 -> 300: DNA lapangan 129 kata kini muat
@@ -72,7 +72,7 @@ class DnaBudgetTest {
         val prompt = PromptEngine.build(input)
         assertFalse(prompt.warnings.any { it.contains("dipangkas") })
         assertTrue(prompt.text.contains("tire repair shop"))
-        assertTrue(prompt.text.contains("[00:00-00:04]"))
+        assertTrue(prompt.text.contains("[00:00-00:05]"))
         assertTrue(prompt.text.contains("Audio:"))
     }
 
@@ -81,7 +81,7 @@ class DnaBudgetTest {
         val input = rikoInput().copy(secondCharacter = CharacterDna("Cell", rikoDna))
         val prompt = PromptEngine.build(input)
         assertTrue(prompt.text.contains("tire repair shop"))
-        assertTrue(prompt.text.contains("[00:00-00:04]"))
+        assertTrue(prompt.text.contains("[00:00-00:05]"))
         assertTrue(prompt.text.contains("Audio:"))
         assertTrue(prompt.text.contains("Cell"))
         // v2.2 — cap Flow 180 -> 300 (terukur 291 kata).

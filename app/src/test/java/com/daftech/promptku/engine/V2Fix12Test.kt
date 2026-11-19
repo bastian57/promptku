@@ -174,8 +174,8 @@ class V2Fix12Test {
     @Test
     fun exchangeBlockModeAHasNoMicroBeats() {
         // Mode A (TEXT_ONLY): TANPA timecode di actionEn — renderer
-        // sudah menimestamp segmennya sendiri ([00:00-00:04] /
-        // [00:04-00:08]); timecode di action bakal dobel. Aturan
+        // sudah menimestamp segmennya sendiri ([00:00-00:05] /
+        // [00:05-00:10]); timecode di action bakal dobel. Aturan
         // never-stop-moving + aerial tetap berlaku di dua mode.
         val prompt = DirectorPrompts.prompterUser(bima18Bible(), listOf(1), "")
         assertFalse(prompt.contains("timestamped micro-beats"))

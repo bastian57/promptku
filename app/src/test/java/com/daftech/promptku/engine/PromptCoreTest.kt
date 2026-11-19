@@ -113,7 +113,7 @@ class PromptCoreTest {
         assertTrue(slots.shot.isNotBlank())
         assertTrue(slots.subject.isNotBlank())
         assertTrue(slots.world.isNotBlank())
-        assertTrue(slots.action.contains("[00:00-00:04]"))
+        assertTrue(slots.action.contains("[00:00-00:05]"))
     }
 
     @Test

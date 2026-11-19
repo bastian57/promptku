@@ -115,7 +115,7 @@ object FountainExport {
         }
         out.append("Catatan: naskah ini draft terstruktur (rule-based), bukan tulisan AI — ")
         out.append("poles dialognya sebelum generate. Tempel satu prompt per generate di engine tujuan.\n")
-        out.append("Flow/Veo: 10 detik per klip, Ingredients max 3 gambar.\n")
+        out.append("Flow (Omni Flash 1.2): 10 detik per klip, Ingredients max 3 gambar. Veo 3.1 Lite (fallback): maks 8 detik, 720p.\n")
         out.append("WanGP TI2V-5B: 121 frame, 1280x704, first-frame mengunci subjek.\n")
         return out.toString()
     }

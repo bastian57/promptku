@@ -217,7 +217,7 @@ object DirectorPrompts {
         fightRoles: Map<Int, FightRole>,
         // v2.1 fix12 — mode (default TEXT_ONLY): micro-beat bertimecode
         // cuma untuk Mode B — Mode A sudah ditimestamp renderer
-        // ([00:00-00:04] / [00:04-00:08]); timecode di actionEn Mode A
+        // ([00:00-00:05] / [00:05-00:10], v1.3.1); timecode di actionEn Mode A
         // bakal dobel dengan marker segmen renderer.
         mode: V2Mode = V2Mode.TEXT_ONLY
     ): String {

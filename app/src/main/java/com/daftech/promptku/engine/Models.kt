@@ -38,7 +38,12 @@ enum class TargetEngine(val labelId: String, val maxWords: Int, val minWords: In
     // karakter API hosted tidak berlaku lokal; rewriter resmi Wan 60-200
     // kata). KLING TETAP 100 (blog resmi Kling: >150 kata cenderung
     // memburuk; target resmi 50-100 kata).
-    FLOW("Flow / Veo", 300, 40),
+    // v1.3.1 — Veo 3.1 Fast/Quality PENSIUN 5 Des 2026 (Flow): profil FLOW
+    // retarget ke Omni Flash 1.2 (default Flow, sampai 15 dtk, Ingredients);
+    // Veo 3.1 Lite jadi fallback (maks 8 dtk, 720p) — cuma di catatan
+    // export, bukan pilihan engine ke-5. Cap 300 + min 40 TIDAK berubah
+    // (tidak ada batas resmi Flow yang ditemukan; riset 18 Nov).
+    FLOW("Flow / Omni 1.2", 300, 40),
     WAN("WanGP", 200, 40),
     KLING("Kling", 100, 60),
     SEEDANCE("Seedance", 250, 60)
@@ -73,7 +78,10 @@ data class EnginePromptProfile(
      * fight_hero_hurt) supaya aturan ini tidak memecahkan tes lama.
      */
     fun ruleText(): String = when (engine) {
-        TargetEngine.FLOW -> "TARGET ENGINE: Flow / Veo. Total scene budget 300 words. Write " +
+        // v1.3.1 — "Flow / Veo" -> "Flow / Omni Flash 1.2" (Veo 3.1
+        // Fast/Quality pensiun 5 Des 2026). Angka TIDAK berubah: total
+        // 300 kata, action_en 50/150 (re-lock v1.3.1).
+        TargetEngine.FLOW -> "TARGET ENGINE: Flow / Omni Flash 1.2. Total scene budget 300 words. Write " +
             "action_en full and detailed: about 50 words for a normal scene, up to 150 words " +
             "for a complex fight scene (several fast moves in one continuous flow). Every word " +
             "must change what the camera sees — no filler adjectives. "

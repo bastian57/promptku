@@ -319,7 +319,7 @@ fun WizardScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "DNA baru disimpan di tab DNA. Nama berlisensi (misal tokoh kartun terkenal) bisa ditolak filter IP Flow/Veo — app akan memperingatkan, tidak memblokir.",
+                    text = "DNA baru disimpan di tab DNA. Nama berlisensi (misal tokoh kartun terkenal) bisa ditolak filter IP Flow — app akan memperingatkan, tidak memblokir.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }

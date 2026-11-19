@@ -82,7 +82,7 @@ class WorldTimeTest {
             audioEn = ""
         )
         val prompt = PromptEngine.build(input)
-        assertTrue(prompt.text.contains("[00:00-00:04] walks through the market carrying a delivery bag."))
+        assertTrue(prompt.text.contains("[00:00-00:05] walks through the market carrying a delivery bag."))
         assertFalse(prompt.text.contains("begins"))
         assertFalse(prompt.text.contains("completes as"))
         // Rantai pose pindah ke klausa kontinuitas.

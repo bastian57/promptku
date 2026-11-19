@@ -26,7 +26,7 @@ object MythFilter {
         Regex("(?i)\\b" + Regex.escape(phrase) + "\\b")
     }
 
-    // Nama berlisensi yang rawan ditolak filter IP Flow/Veo.
+    // Nama berlisensi yang rawan ditolak filter IP Flow.
     // App hanya MEMPERINGATKAN + menyarankan nama generik, tidak memblokir user.
     val licensedNames: List<String> = listOf(
         "goku", "son goku", "cell", "kamehameha", "vegeta", "gohan",
@@ -93,14 +93,14 @@ object MythFilter {
 
     private fun isProtectedSentence(sentence: String): Boolean =
         sentence.contains("Audio:") || sentence.contains("says:") || sentence.contains("says,") ||
-            // v2.1 fix7 — segmen timeline [00:04-00:08] + frasa kontinuitas
+            // v2.1 fix7 — segmen timeline [00:05-00:10] + frasa kontinuitas
             // "Starts from..." (audit Olympus: seg2 hilang S3/S5/S16,
             // "Starts from..." hidup cuma 2/18 — trim membuang kalimat dari
             // akhir tanpa menghormati flag mandatory assembleOrdered).
             // Seedance "[4-6s]..." sudah terlindung lewat "Audio:" di
             // kalimat yang sama; Kling/Wan tanpa marker — belum ada bukti
             // lapangan segmennya hilang di sana.
-            sentence.contains("[00:04-00:08]") || sentence.trimStart().startsWith("Starts from")
+            sentence.contains("[00:05-00:10]") || sentence.trimStart().startsWith("Starts from")
 
     // Pangkas ke batas KARAKTER (kotak prompt Flow ~1.400 karakter — batas
     // aman 1.300). Aturan yang sama dengan trimToWords: kalimat audio/dialog

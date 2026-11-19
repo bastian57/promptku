@@ -12,7 +12,7 @@ class TrashCleanupTest {
         projectId = projectId,
         orderIndex = 0,
         title = title,
-        engine = "Flow / Veo",
+        engine = "Flow / Omni 1.2",
         promptText = "prompt $title",
         negativeText = "",
         createdAt = id * 1000L

@@ -230,10 +230,10 @@ class V2Fix7Test {
 
     private fun trimFixtureText(): String = listOf(
         "Aang stands on cracked ice under a storm sky, wind tearing at his tunic.",
-        "[00:00-00:04] Aang lunges forward with blazing fists, fire swirling around his arms.",
+        "[00:00-00:05] Aang lunges forward with blazing fists, fire swirling around his arms.",
         "The crowd gasps as embers scatter across the frozen ground.",
         "Sparks fly while the emperor raises his burning staff high.",
-        "[00:04-00:08] the motion settles, ending as standing tall.",
+        "[00:05-00:10] the motion settles, ending as standing tall.",
         "Style A, Style B.",
         "Audio: wind, fire, crackling stone.",
         "Starts from standing still, ends as standing tall."
@@ -242,20 +242,20 @@ class V2Fix7Test {
     @Test
     fun trimToWordsKeepsTimelineSegment() {
         // 71 kata -> cap 40: yang dibuang = kalimat pengisi (s2/s3/s4/
-        // "Style A, Style B."); yang hidup = seg2 [00:04-00:08], Audio,
+        // "Style A, Style B."); yang hidup = seg2 [00:05-00:10], Audio,
         // dan frasa kontinuitas "Starts from...".
         val out = MythFilter.trimToWords(trimFixtureText(), 40)
-        assertTrue(out.contains("[00:04-00:08]"))
+        assertTrue(out.contains("[00:05-00:10]"))
         assertTrue(out.contains("Starts from standing still"))
         assertTrue(out.contains("Audio:"))
         assertFalse(out.contains("The crowd gasps"))
-        assertFalse(out.contains("[00:00-00:04]"))
+        assertFalse(out.contains("[00:00-00:05]"))
     }
 
     @Test
     fun trimToCharsKeepsTimelineSegment() {
         val out = MythFilter.trimToChars(trimFixtureText(), 230)
-        assertTrue(out.contains("[00:04-00:08]"))
+        assertTrue(out.contains("[00:05-00:10]"))
         assertTrue(out.contains("Starts from standing still"))
         assertTrue(out.contains("Audio:"))
         assertFalse(out.contains("The crowd gasps"))

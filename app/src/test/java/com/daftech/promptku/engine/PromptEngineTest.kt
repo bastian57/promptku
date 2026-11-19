@@ -37,8 +37,8 @@ class PromptEngineTest {
     fun flowUsesTimestampAndPositiveLock() {
         val prompt = PromptEngine.build(fullInput(TargetEngine.FLOW))
         assertEquals(TargetEngine.FLOW, prompt.engine)
-        assertTrue(prompt.text.contains("[00:00-00:04]"))
-        assertTrue(prompt.text.contains("[00:04-00:08]"))
+        assertTrue(prompt.text.contains("[00:00-00:05]"))
+        assertTrue(prompt.text.contains("[00:05-00:10]"))
         assertTrue(prompt.text.contains("35mm"))
         assertTrue(prompt.text.contains("Goku"))
         assertTrue(prompt.text.contains("Cell"))
@@ -53,7 +53,7 @@ class PromptEngineTest {
         val prompt = PromptEngine.build(fullInput(TargetEngine.WAN))
         assertEquals(TargetEngine.WAN, prompt.engine)
         assertEquals(PromptEngine.WAN_NEGATIVE_MANDARIN, prompt.negativePrompt)
-        assertFalse(prompt.text.contains("[00:00-00:04]"))
+        assertFalse(prompt.text.contains("[00:00-00:05]"))
         assertTrue(prompt.wordCount <= 120)
         assertTrue(prompt.wordCount >= 40)
     }
@@ -101,7 +101,7 @@ class PromptEngineTest {
         val template = Templates.gokuVsCell()
         val prompt = PromptEngine.build(template.input)
         assertTrue(prompt.text.contains("Goku"))
-        assertTrue(prompt.text.contains("[00:00-00:04]"))
+        assertTrue(prompt.text.contains("[00:00-00:05]"))
         // v2.2 — cap Flow 180 -> 300 (terukur 210 kata).
         assertTrue(prompt.wordCount in 40..300)
         assertTrue(prompt.warnings.isNotEmpty())
