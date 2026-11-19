@@ -138,6 +138,27 @@ object ArcLexicon {
         "dunia kembali damai", "telah usai", "akhirnya bebas", "badai reda", "dunia akhirnya bebas"
     )
 
+    // v2.2-fix5 — REVEAL (kalibrasi R6 buat DRAMA, lapangan Jubah Debu
+    // 19 Nov): klimaks dramatis = pengungkapan identitas/kebenaran
+    // ("kebenaran mutlak terungkap", narasi S13), bukan serangan fisik.
+    // Bobot +2/item di intensityScore, sama seperti finalitas. Kata
+    // "sebenarnya"/"ternyata" tetap di tingkat kata — dalam prosa cerita
+    // keduanya hampir selalu menandai pengungkapan ("ternyata dia CEO"),
+    // bukan sekadar penekanan.
+    val REVEAL_WORDS_EN = setOf(
+        "revealed", "reveal", "reveals", "exposed", "confess",
+        "confesses", "confession"
+    )
+    val REVEAL_WORDS_ID = setOf(
+        "terungkap", "terbongkar", "ternyata", "sebenarnya", "mengakui",
+        "pengakuan", "terkuak", "tersingkap"
+    )
+    val REVEAL_PHRASES_EN = listOf("true identity", "the truth", "reveals the truth")
+    val REVEAL_PHRASES_ID = listOf(
+        "kebenaran terungkap", "identitas terungkap", "rahasia terbongkar",
+        "jati diri", "siapa sebenarnya"
+    )
+
     // --- Serangan besar: (modifier ATAU verba energi) + nomina serang ---
 
     val BIG_MODIFIERS = setOf(
@@ -397,6 +418,13 @@ object ArcLexicon {
             findPhrases(text, RESOLUTION_PHRASES_EN + RESOLUTION_PHRASES_ID)
     }
 
+    /** Semua klaim pengungkapan di teks (kata + frasa, EN + ID). */
+    fun findReveal(text: String): List<String> {
+        if (text.isBlank()) return emptyList()
+        return findWords(text, REVEAL_WORDS_EN + REVEAL_WORDS_ID) +
+            findPhrases(text, REVEAL_PHRASES_EN + REVEAL_PHRASES_ID)
+    }
+
     /** Kata berantem/tantangan di teks aksi. */
     fun findFightChallenge(text: String): List<String> {
         if (text.isBlank()) return emptyList()
@@ -620,14 +648,23 @@ object ArcLexicon {
      *    "mencapai puncaknya" = kata "puncak" + frasa, +4).
      *  - S16 Kaito adalah PENUTUP, bukan Klimaks (riset sempat
      *    menghitungnya sebagai Klimaks dan menyimpulkan R6 Kaito "lolos
-     *    tepat" — SALAH: pra-Klimaks 7 > Klimaks 3, R6a gagal). */
-    fun intensityScore(actionEn: String, narrationId: String, bible: StoryBible): Int {
+     *    tepat" — SALAH: pra-Klimaks 7 > Klimaks 3, R6a gagal).
+     *  - v2.2-fix5 (R6 buat DRAMA, lapangan Jubah Debu 19 Nov): leksikon
+     *    REVEAL (+2/item) ditambahkan; film non-fight (!isFightFilm)
+     *    TIDAK menghitung resolusi (countResolution=false) — resolusi
+     *    di Penutup adalah akhiran normal DRAMA, bukan puncak kedua.
+     *    Jubah Debu: V0 (fight) Klimaks 4 vs Penutup 12 GAGAL; V5
+     *    (non-fight) Klimaks 4 (S13=3, S14=2, S15=4) vs Penutup 0
+     *    LOLOS. Bima/Kaito tidak berubah (film ACTION + nol kata
+     *    reveal di fixture). */
+    fun intensityScore(actionEn: String, narrationId: String, bible: StoryBible, countResolution: Boolean = true): Int {
         var score = 0
         if (isBigAttack(actionEn)) score += 3
         if (extractNamedMove(actionEn, bible) != null) score += 1
         val combined = "$actionEn $narrationId"
         score += 2 * findFinality(combined).size
-        score += 2 * findResolution(combined).size
+        score += 2 * findReveal(combined).size
+        if (countResolution) score += 2 * findResolution(combined).size
         val actionTokens = tokensOf(actionEn)
         score += actionTokens.count { it in FIGHT_VERBS_SCORER }
         val lowerAction = " " + actionEn.lowercase().replace(Regex("[^a-z0-9]+"), " ") + " "

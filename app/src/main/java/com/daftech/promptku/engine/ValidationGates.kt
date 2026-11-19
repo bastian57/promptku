@@ -295,8 +295,16 @@ object ValidationGates {
                 ArcLexicon.extractNamedMove(it.plan.actionEn, bible) != null
         }
         if (hasActionArc) {
+            // v2.2-fix5 — film non-fight (DRAMA dkk.) tidak menghitung
+            // resolusi di skor intensitas: resolusi di Penutup adalah
+            // akhiran normal genre, bukan puncak kedua (Jubah Debu:
+            // Penutup 12 vs Klimaks 4 padahal alur benar). Sinyal
+            // penggantinya = REVEAL (+2/item, di intensityScore).
             val scores = scenes.associate {
-                it.sceneNumber to ArcLexicon.intensityScore(it.plan.actionEn, it.plan.narrationId, bible)
+                it.sceneNumber to ArcLexicon.intensityScore(
+                    it.plan.actionEn, it.plan.narrationId, bible,
+                    countResolution = BeatMap.isFightFilm(bible)
+                )
             }
             val climaxRange = map.first { it.beatIndex == climaxIdx }
             val closingRange = map.first { it.beatIndex == closingIdx }
