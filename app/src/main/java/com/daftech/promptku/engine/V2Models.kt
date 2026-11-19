@@ -24,7 +24,22 @@ enum class V2Provider(val label: String, val dailyLimit: Int) {
 /** Hasil satu panggilan LLM: teks mentah + provider yang dipakai. */
 sealed class V2Call {
     data class Ok(val text: String, val provider: V2Provider) : V2Call()
-    data class Fail(val message: String, val retryable: Boolean) : V2Call()
+    data class Fail(
+        val message: String,
+        val retryable: Boolean,
+        // Resume — daftar percobaan provider yang gagal, diisi callChain
+        // (label + pesan tiap provider). Kosong = kegagalan satu provider
+        // saja (bukan rantai) — .message tetap sumber kebenaran lama.
+        val attempts: List<Pair<String, String>> = emptyList()
+    ) : V2Call() {
+        /** Pesan lengkap untuk status: semua provider + alasannya. */
+        fun fullMessage(): String {
+            if (attempts.isEmpty()) return message
+            return "Semua provider gagal:\n" + attempts.joinToString("\n") { (label, reason) ->
+                "- $label: $reason"
+            }
+        }
+    }
 }
 
 data class V2Character(

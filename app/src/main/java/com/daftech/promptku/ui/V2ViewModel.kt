@@ -102,6 +102,13 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
     // dibaca statusMessage + header export supaya tidak hilang diam-diam.
     var truncationWarning by mutableStateOf<String?>(null)
         private set
+    // Resume — nomor scene yang hilang dari film terpotong (tombol
+    // "Lanjutkan" di Layar Prompt). Diisi waktu build terpotong selesai
+    // + waktu bible terpotong dimuat dari cache; dikosongkan waktu film
+    // lengkap, waktu bible baru dikembangkan, dan waktu bible direvisi
+    // (scene lama dari bible lama — bangun ulang dari nol).
+    var resumeMissing by mutableStateOf<List<Int>>(emptyList())
+        private set
     // Job prompter yang sedang jalan (untuk tombol Batalkan) + id baris
     // bible yang tersimpan (untuk menyimpan koreksi chip ke cache).
     private var buildJob: Job? = null
@@ -421,6 +428,12 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     bible = result
                     isOfflineDraft = false
                     seriesContinuation = null
+                    // Resume — bible BARU: scene lama dari bible sebelumnya
+                    // tidak berlaku (alasan yang sama dengan revisi).
+                    scenes = emptyList()
+                    gates = emptyList()
+                    truncationWarning = null
+                    resumeMissing = emptyList()
                     withContext(Dispatchers.IO) { saveBible(result, trimmed) }
                     loadSavedBibles()
                     step = V2Step.STORY
@@ -524,6 +537,8 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
             }
             bible = result.first
             scenes = result.second
+            // Resume — draft offline selalu lengkap (rule-based, tanpa LLM).
+            resumeMissing = emptyList()
             gates = ValidationGates.runGates(
                 result.first, result.second, hasImages = false,
                 // Draft Offline tidak punya narasi (rule-based, tanpa AI):
@@ -639,6 +654,14 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     statusMessage = fail.message
                 } else if (revised != null) {
                     bible = revised
+                    // Resume — scene lama dari bible LAMA: promptnya tidak
+                    // berlaku untuk bible hasil revisi. Kosongkan supaya
+                    // tombol "Lanjutkan" tidak menawarkan scene yang salah
+                    // + Layar Prompt tidak menampilkan prompt basi.
+                    scenes = emptyList()
+                    gates = emptyList()
+                    truncationWarning = null
+                    resumeMissing = emptyList()
                     statusMessage = "Revisi selesai. Baca lagi sebelum setuju."
                 }
                 refreshQuota()
@@ -655,11 +678,19 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- Prompter ----------
 
-    fun approveAndBuildPrompts() {
+    // Resume — [keptPlans] = plan scene yang sudah jadi dari build
+    // terpotong sebelumnya (kosong = build penuh dari nol). Alur
+    // sesudahnya SAMA (render film penuh + gerbang + simpan).
+    fun approveAndBuildPrompts(keptPlans: List<V2ScenePlan> = emptyList()) {
         val current = bible ?: return
         buildJob = viewModelScope.launch {
             busy = true
-            progress = "Prompter senior membuat ${current.totalScenes} prompt scene..."
+            val missingCount = (1..current.totalScenes).count { n -> keptPlans.none { it.sceneNumber == n } }
+            progress = if (keptPlans.isEmpty()) {
+                "Prompter senior membuat ${current.totalScenes} prompt scene..."
+            } else {
+                "Melanjutkan film — $missingCount scene yang hilang..."
+            }
             try {
                 val mode = if (images.isNotEmpty()) V2Mode.REFERENCE else V2Mode.TEXT_ONLY
                 val isFight = current.genre == com.daftech.promptku.engine.Genre.ACTION ||
@@ -671,16 +702,27 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                         // 15 menit, bukan 10 — run free-tier yang lambat tapi
                         // jalan (5 batch + retry) wajar sampai ~11 menit.
                         withTimeout(900_000L) {
-                            pipeline().buildPrompts(current, mode, current.targetEngine) { done, total ->
-                                // Callback dipanggil dari thread IO — lempar
-                                // ke Main (tulis state Compose dari IO crash).
-                                viewModelScope.launch(Dispatchers.Main) {
-                                    progress = "Prompter senior: batch $done/$total (${current.totalScenes} scene)..."
+                            if (keptPlans.isEmpty()) {
+                                pipeline().buildPrompts(current, mode, current.targetEngine) { done, total ->
+                                    // Callback dipanggil dari thread IO — lempar
+                                    // ke Main (tulis state Compose dari IO crash).
+                                    viewModelScope.launch(Dispatchers.Main) {
+                                        progress = "Prompter senior: batch $done/$total (${current.totalScenes} scene)..."
+                                    }
+                                }
+                            } else {
+                                pipeline().resumePrompts(current, keptPlans, mode, current.targetEngine) { done, total ->
+                                    viewModelScope.launch(Dispatchers.Main) {
+                                        progress = "Melanjutkan: batch $done/$total (${current.totalScenes} scene)..."
+                                    }
                                 }
                             }
                         }
                     } catch (e: TimeoutCancellationException) {
-                        emptyList<V2ScenePlan>() to V2Call.Fail(
+                        // Resume — timeout tidak boleh membuang scene yang
+                        // sudah jadi: kembalikan keptPlans supaya alur
+                        // lanjut sebagai film terpotong (bukan gagal total).
+                        keptPlans to V2Call.Fail(
                             "Prompter timeout 15 menit — ada batch yang nyangkut " +
                                 "(cek koneksi / pindah ke data seluler). Cerita tersimpan, coba lagi.",
                             retryable = true
@@ -688,7 +730,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 if (fail != null && plans.isEmpty()) {
-                    statusMessage = fail.message
+                    statusMessage = fail.fullMessage()
                     return@launch
                 }
                 // v2.1 fix9 — batch gagal SEBAGIAN = film TERPOTONG (audit
@@ -697,7 +739,7 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 // sehingga film lanjut diam-diam tanpa aftermath). Simpan
                 // peringatan untuk statusMessage + header export.
                 truncationWarning = if (fail != null && plans.isNotEmpty()) {
-                    "Peringatan: prompter gagal di sebagian batch (${fail.message}) — film terpotong jadi ${plans.size} dari ${current.totalScenes} scene. Scene yang hilang tidak ikut ter-generate."
+                    "Peringatan: prompter gagal di sebagian batch (${fail.fullMessage()}) — film terpotong jadi ${plans.size} dari ${current.totalScenes} scene. Scene yang hilang tidak ikut ter-generate."
                 } else null
                 var rendered = ModeRender.renderAll(current, plans, mode, isFight, images.size)
                 var gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
@@ -775,6 +817,10 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                     gateResults = ValidationGates.runGates(current, rendered, images.isNotEmpty())
                 }
                 scenes = rendered
+                // Resume — scene yang hilang dihitung dari film final
+                // (sesudah retry G6): tombol "Lanjutkan" muncul kalau ada
+                // yang kurang, hilang kalau film lengkap.
+                resumeMissing = (1..current.totalScenes).filter { n -> rendered.none { it.sceneNumber == n } }
                 gates = gateResults
                 withContext(Dispatchers.IO) { saveScenes(current, rendered) }
                 step = V2Step.PROMPTS
@@ -799,6 +845,18 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                 progress = ""
             }
         }
+    }
+
+    /** Resume — lanjutkan film terpotong dari scene yang hilang (tombol
+     *  "Lanjutkan" di Layar Prompt). Scene yang sudah jadi dipakai ulang
+     *  (tidak dipanggil lagi — hemat kuota); hanya yang hilang yang
+     *  dipanggil, lewat approveAndBuildPrompts yang sama. */
+    fun resumeBuild() {
+        val current = bible ?: return
+        if (resumeMissing.isEmpty()) return
+        val kept = scenes.map { it.plan }
+        if (kept.isEmpty()) return
+        approveAndBuildPrompts(keptPlans = kept)
     }
 
     /** Batalkan prompter yang sedang jalan — cerita tetap tersimpan. */
@@ -1010,6 +1068,11 @@ class V2ViewModel(application: Application) : AndroidViewModel(application) {
                             approved = item.approved
                         )
                     }
+                    // Resume — film terpotong yang dimuat dari cache bisa
+                    // dilanjutkan (scene yang hilang dihitung dari nomor).
+                    resumeMissing = bible?.let { b ->
+                        (1..b.totalScenes).filter { n -> scenes.none { it.sceneNumber == n } }
+                    }.orEmpty()
                     gates = bible?.let { ValidationGates.runGates(it, scenes, images.isNotEmpty()) }.orEmpty()
                     // v2.1 — bible tanpa scene (baru dikembangkan, belum
                     // di-approve) dibuka di Layar Cerita, bukan Prompt kosong.

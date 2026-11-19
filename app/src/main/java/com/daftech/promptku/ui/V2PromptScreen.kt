@@ -112,6 +112,16 @@ fun V2PromptScreen(v2: V2ViewModel) {
             if (v2.statusMessage.isNotBlank()) {
                 Text(v2.statusMessage)
             }
+            // Resume — film terpotong: lanjutkan dari scene yang hilang
+            // saja (scene yang sudah jadi tidak dipanggil ulang).
+            if (v2.resumeMissing.isNotEmpty() && !v2.busy) {
+                Button(
+                    onClick = { v2.resumeBuild() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Lanjutkan (scene ${formatSceneRanges(v2.resumeMissing)} — ${v2.resumeMissing.size} scene lagi)")
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -181,4 +191,24 @@ fun V2PromptScreen(v2: V2ViewModel) {
             }
         }
     }
+}
+
+// Resume — "8-18" untuk rentang berurutan, "3, 8-18" untuk gabungan.
+private fun formatSceneRanges(nums: List<Int>): String {
+    if (nums.isEmpty()) return ""
+    val sorted = nums.sorted()
+    val parts = mutableListOf<String>()
+    var start = sorted[0]
+    var prev = sorted[0]
+    for (n in sorted.drop(1)) {
+        if (n == prev + 1) {
+            prev = n
+        } else {
+            parts.add(if (start == prev) "$start" else "$start-$prev")
+            start = n
+            prev = n
+        }
+    }
+    parts.add(if (start == prev) "$start" else "$start-$prev")
+    return parts.joinToString(", ")
 }

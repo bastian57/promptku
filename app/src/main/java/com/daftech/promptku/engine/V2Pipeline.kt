@@ -24,6 +24,10 @@ class V2Pipeline(
         images: List<String> = emptyList()
     ): V2Call {
         var lastFail: V2Call.Fail? = null
+        // Resume — catat tiap percobaan yang gagal supaya pesan gagal bisa
+        // menampilkan SEMUA provider + alasannya, bukan cuma yang terakhir
+        // (lapangan: Groq 429 menutupi alasan Gemini).
+        val attempts = mutableListOf<Pair<String, String>>()
         for (provider in chain) {
             val result = LlmClients.callProvider(
                 transport, provider, geminiKey, groqKey,
@@ -36,11 +40,13 @@ class V2Pipeline(
                 }
                 is V2Call.Fail -> {
                     lastFail = result
-                    if (!result.retryable) return result
+                    attempts.add(provider.label to result.message)
+                    if (!result.retryable) return result.copy(attempts = attempts.toList())
                 }
             }
         }
-        return lastFail ?: V2Call.Fail("Semua provider gagal.", retryable = true)
+        return lastFail?.copy(attempts = attempts.toList())
+            ?: V2Call.Fail("Semua provider gagal.", retryable = true)
     }
 
     /** Vision: satu panggilan per gambar (maks 3). */
@@ -259,6 +265,49 @@ class V2Pipeline(
             } ?: previousExit
         }
         return all to null
+    }
+
+    /** Resume — lanjutkan film terpotong: HANYA scene yang hilang yang
+     *  dipanggil ulang (dihitung dari nomor scene, bukan dari batch yang
+     *  gagal — ini juga menyembuhkan batch yang diam-diam pendek: LLM
+     *  mengembalikan 3 dari 5 plan yang diminta tanpa kegagalan). [keptPlans]
+     *  = plan scene yang sudah jadi (dari memori / cache); hasil = gabungan
+     *  kept + baru, diurutkan nomor scene. Kalau resume gagal di tengah,
+     *  batch baru yang sudah berhasil tetap dikembalikan bersama kept
+     *  (kemajuan monoton — tiap percobaan hanya bisa menambah scene).
+     *  buildPrompts lama TIDAK disentuh — fungsi ini berdiri sendiri.
+     *  previousExit per batch diambil dari scene terakhir (kept/baru) yang
+     *  nomornya di bawah batch itu + ledger dari semua plan yang sudah ada
+     *  (pola yang sama dengan retry G6 + regenerasi 1 scene). */
+    fun resumePrompts(
+        bible: StoryBible,
+        keptPlans: List<V2ScenePlan>,
+        mode: V2Mode = V2Mode.TEXT_ONLY,
+        engine: TargetEngine = TargetEngine.FLOW,
+        onBatch: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): Pair<List<V2ScenePlan>, V2Call.Fail?> {
+        val keptNums = keptPlans.map { it.sceneNumber }.toSet()
+        val missing = (1..bible.totalScenes).filter { it !in keptNums }
+        if (missing.isEmpty()) return keptPlans.sortedBy { it.sceneNumber } to null
+        val all = keptPlans.toMutableList()
+        val beatMap = BeatMap.build(bible.totalScenes, bible.beats)
+        val batches = beatMap.flatMap { beat ->
+            (beat.firstScene..beat.lastScene).toList().chunked(5)
+        }.filter { batch -> batch.any { it in missing } }
+        var ledger = ArcLedger.fromPlans(keptPlans, bible)
+        for ((index, batch) in batches.withIndex()) {
+            val needed = batch.filter { it in missing }
+            val previousExit = all.filter { it.sceneNumber < batch.first() }
+                .maxByOrNull { it.sceneNumber }?.let {
+                    "Scene ${it.sceneNumber} ends: ${it.actionEn}. ${it.transitionEn}"
+                } ?: "Opening: ${bible.beats.firstOrNull()?.summaryEn.orEmpty()}"
+            val (plans, fail) = buildPromptBatch(bible, needed, previousExit, ledger = ledger, mode = mode, engine = engine)
+            if (fail != null) return all.sortedBy { it.sceneNumber } to fail
+            all.addAll(plans)
+            ledger = ArcLedger.fromPlans(all, bible)
+            onBatch(index + 1, batches.size)
+        }
+        return all.sortedBy { it.sceneNumber } to null
     }
 
     companion object {
